@@ -291,12 +291,11 @@ async def main():
 
 asyncio.run(main())
 
-from browser_use import Agent, ChatAWSBedrock
+from browser_use import Agent, ChatOpenAI
 
 # Works with any Bedrock model (Anthropic, Meta, AI21, etc.)
 llm = ChatAWSBedrock(
-    model="anthropic.claude-3-5-sonnet-20240620-v1:0",  # or any Bedrock model
-    aws_region="us-east-1",
+	model="gpt-4.1",
 )
 
 # Create agent with the model

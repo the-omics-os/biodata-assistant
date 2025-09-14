@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # Optional Browser-Use imports with fallbacks
 from browser_use import Agent as BrowserAgent
 from browser_use import Browser, BrowserProfile
-from browser_use.llm import ChatAWSBedrock
+from browser_use.llm import ChatOpenAI
 
 
 
@@ -96,11 +96,8 @@ class LinkedInScraper:
             except Exception:
                 pass
 
-            llm = ChatAWSBedrock(
-                model="us.anthropic.claude-sonnet-4-20250514-v1:0",
-                aws_region="us-east-1",
-                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            llm = ChatOpenAI(
+                model="gpt-4.1",
             )
             task = """
 1. Navigate to https://www.linkedin.com/login
@@ -137,7 +134,7 @@ class LinkedInScraper:
         """
         if self.logged_in:
             return True, "success"
-        if BrowserAgent is None or self.browser is None or ChatAWSBedrock is None:
+        if BrowserAgent is None or self.browser is None or ChatOpenAI is None:
             return False, "unavailable"
 
         try:
@@ -167,7 +164,7 @@ class LinkedInScraper:
         without performing any connect/message actions.
         Returns a list of LinkedInContact-shaped dicts.
         """
-        if BrowserAgent is None or self.browser is None or ChatAWSBedrock is None:
+        if BrowserAgent is None or self.browser is None or ChatOpenAI is None:
             return []
 
         try:
@@ -197,11 +194,8 @@ Return strictly as a JSON array.
 Notes: {filter_info}
 """
 
-            llm = ChatAWSBedrock(
-                model="us.anthropic.claude-sonnet-4-20250514-v1:0",
-                aws_region="us-east-1",
-                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            llm = ChatOpenAI(
+                model="gpt-4.1",
             )
             agent = BrowserAgent(
                 task=task,
@@ -262,7 +256,7 @@ Notes: {filter_info}
             List of LinkedInActionResult dicts if login=True, else LinkedInContact dicts
         """
         # If Browser-Use is not available, return mock results for MVP/demo
-        if BrowserAgent is None or self.browser is None or ChatAWSBedrock is None:
+        if BrowserAgent is None or self.browser is None or ChatOpenAI is None:
             logger.warning("browser_use not available; returning mock LinkedIn results")
             results = self._mock_results(company, departments, keywords, max_results)
             await self._log_provenance(
@@ -378,11 +372,9 @@ Notes: {filter_info}
         if not settings.LINKEDIN_EMAIL or not settings.LINKEDIN_PW:
             return "missing_credentials"
 
-        llm = ChatAWSBedrock(
-            model="us.anthropic.claude-sonnet-4-20250514-v1:0",
-            aws_region="us-east-1",
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        llm = ChatOpenAI(
+            model="gpt-4.1",
+            aws_region="us-east-1"
         )
         
         login_task = f"""
@@ -430,11 +422,9 @@ IMPORTANT: Do not log or expose the actual credentials in any output.
         if not settings.LINKEDIN_COMPANY_URL:
             return False
 
-        llm = ChatAWSBedrock(
-            model="us.anthropic.claude-sonnet-4-20250514-v1:0",
-            aws_region="us-east-1",
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        llm = ChatOpenAI(
+            model="gpt-4.1",
+            aws_region="us-east-1"
         )
         
         nav_task = f"""
@@ -465,11 +455,9 @@ LinkedIn company navigation task:
 
     async def _apply_filters(self, title_keyword: str) -> bool:
         """Apply title keyword filter in LinkedIn employee search"""
-        llm = ChatAWSBedrock(
-            model="us.anthropic.claude-sonnet-4-20250514-v1:0",
-            aws_region="us-east-1",
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        llm = ChatOpenAI(
+            model="gpt-4.1",
+            aws_region="us-east-1"
         )
         
         filter_task = f"""
@@ -510,11 +498,9 @@ LinkedIn filtering task:
         dry_run: bool,
     ) -> List[Dict[str, Any]]:
         """Process profiles and perform connect/message actions"""
-        llm = ChatAWSBedrock(
-            model="us.anthropic.claude-sonnet-4-20250514-v1:0",
-            aws_region="us-east-1",
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        llm = ChatOpenAI(
+            model="gpt-4.1",
+            aws_region="us-east-1"
         )
         
         # Truncate templates to LinkedIn limits
@@ -602,11 +588,8 @@ LinkedIn employee search task:
 5. Return strictly as a JSON array.
 """
 
-            llm = ChatAWSBedrock(
-                model="us.anthropic.claude-sonnet-4-20250514-v1:0",
-                aws_region="us-east-1",
-                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            llm = ChatOpenAI(
+                model="gpt-4.1",
             )
 
             agent = BrowserAgent(

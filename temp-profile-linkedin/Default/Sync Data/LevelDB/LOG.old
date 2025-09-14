@@ -1,3 +1,3 @@
-2025/09/14-05:46:27.239 38ae07 Reusing MANIFEST /Users/tyo/GITHUB/biodata-assistant/temp-profile-linkedin/Default/Sync Data/LevelDB/MANIFEST-000001
-2025/09/14-05:46:27.242 38ae07 Recovering log #3
-2025/09/14-05:46:27.243 38ae07 Reusing old log /Users/tyo/GITHUB/biodata-assistant/temp-profile-linkedin/Default/Sync Data/LevelDB/000003.log 
+2025/09/14-05:55:17.472 3904f8 Reusing MANIFEST /Users/tyo/GITHUB/biodata-assistant/temp-profile-linkedin/Default/Sync Data/LevelDB/MANIFEST-000001
+2025/09/14-05:55:17.473 3904f8 Recovering log #3
+2025/09/14-05:55:17.473 3904f8 Reusing old log /Users/tyo/GITHUB/biodata-assistant/temp-profile-linkedin/Default/Sync Data/LevelDB/000003.log 

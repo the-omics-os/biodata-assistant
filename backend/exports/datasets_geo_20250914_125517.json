@@ -1,0 +1,21 @@
+[
+  {
+    "accession": "GSE299631",
+    "title": "Spatiotemporal organisation of residual disease in mouse and human BRCA1-deficient mammary tumors and breast cancer",
+    "description": null,
+    "modalities": [
+      "Expression profiling by high throughput sequencing",
+      "Other"
+    ],
+    "cancer_types": [],
+    "sample_size": 50,
+    "access_type": "public",
+    "download_url": null,
+    "contact_info": null,
+    "link": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE299631",
+    "relevance_score": 0.0,
+    "database": "GEO",
+    "contact_name": null,
+    "contact_email": null
+  }
+]

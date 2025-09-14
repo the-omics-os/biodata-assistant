@@ -1,0 +1,25 @@
+[
+  {
+    "accession": "GSE175975",
+    "title": "JAK-STAT Signaling Confers Lineage Plasticity and AR Targeted Therapy Resistance in Prostate Cancer",
+    "description": null,
+    "modalities": [
+      "scRNA-seq",
+      "Expression profiling by high throughput sequencing"
+    ],
+    "cancer_types": [
+      "prostate cancer",
+      "breast cancer",
+      "lung cancer"
+    ],
+    "sample_size": 30,
+    "access_type": "public",
+    "download_url": null,
+    "contact_info": null,
+    "link": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE175975",
+    "relevance_score": 0.0,
+    "database": "GEO",
+    "contact_name": null,
+    "contact_email": null
+  }
+]

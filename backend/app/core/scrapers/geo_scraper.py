@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 from browser_use import Agent as BrowserAgent
 from browser_use import Browser, BrowserProfile
-from browser_use.llm import ChatAWSBedrock
+from browser_use.llm import ChatOpenAI
 
 
 
@@ -101,7 +101,7 @@ Speed optimization instructions:
         Returns a list of dicts (ready to be normalized by agents if needed).
         """
         # If Browser-Use is not available, return mock results for MVP/demo
-        if BrowserAgent is None or self.browser is None or ChatAWSBedrock is None:
+        if BrowserAgent is None or self.browser is None or ChatOpenAI is None:
             logger.warning("browser_use not available; returning mock GEO results")
             results = []
             await self._log_provenance(
@@ -135,11 +135,8 @@ You are a world class bioinformatician. You think and navigate the tools like on
 """
 
             # Bedrock Anthropic Claude Sonnet 4 (configured via env)
-            llm = ChatAWSBedrock(
-                model="us.anthropic.claude-sonnet-4-20250514-v1:0",
-                aws_region="us-east-1",
-                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            llm = ChatOpenAI(
+                model="gpt-4.1",
             )
 
             agent = BrowserAgent(
@@ -209,7 +206,7 @@ Return strictly as a JSON object with keys: contact_name, contact_email, downloa
 """
         try:
             # Prefer a dedicated agent with structured output for enrichment
-            if BrowserAgent is not None and ChatAWSBedrock is not None and self.browser is not None:
+            if BrowserAgent is not None and ChatOpenAI is not None and self.browser is not None:
                 from pydantic import BaseModel as _BM  # alias to avoid shadowing
 
                 class GEOEnrichment(_BM):
@@ -219,7 +216,7 @@ Return strictly as a JSON object with keys: contact_name, contact_email, downloa
                     pubmed_id: Optional[str] = None
                     publication_url: Optional[str] = None
 
-                llm = ChatAWSBedrock(
+                llm = ChatOpenAI(
                     model="us.anthropic.claude-sonnet-4-20250514-v1:0",
                     aws_region="us-east-1",
                     aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),

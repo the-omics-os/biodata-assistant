@@ -14,7 +14,7 @@ from app.config import settings
 # Browser-Use (Python) — MUST be used for LinkedIn search
 from browser_use import Agent as BrowserAgent
 from browser_use import Browser, BrowserProfile
-from browser_use.llm import ChatAWSBedrock
+from browser_use.llm import ChatOpenAI
 
 
 logger = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ def _extract_json_list(text: str) -> List[Dict[str, Any]]:
 
 
 async def _run_browser_use_task(task: str) -> List[Dict[str, Any]]:
-    if BrowserAgent is None or Browser is None or ChatAWSBedrock is None:
+    if BrowserAgent is None or Browser is None or ChatOpenAI is None:
         logger.warning("browser_use not available; returning empty colleague results")
         return []
 
@@ -97,11 +97,8 @@ async def _run_browser_use_task(task: str) -> List[Dict[str, Any]]:
         timeout=600
     )
     browser = Browser(browser_profile=profile)
-    llm = ChatAWSBedrock(
-        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
-        aws_region="us-east-1",
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+    llm = ChatOpenAI(
+        model="gpt-4.1",
     )
 
     agent = BrowserAgent(

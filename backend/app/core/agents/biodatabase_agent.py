@@ -17,7 +17,7 @@ from app.core.scrapers.geo_scraper import GEOScraper
 
 from browser_use import Agent as BrowserAgent
 from browser_use import Browser, BrowserProfile
-from browser_use.llm import ChatAWSBedrock
+from browser_use.llm import ChatOpenAI
 
 
 logger = logging.getLogger(__name__)
