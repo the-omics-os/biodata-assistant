@@ -39,6 +39,20 @@ class InternalContact(BaseModel):
     reason_for_contact: str
 
 
+class Contact(BaseModel):
+    name: str
+    email: Optional[EmailStr] = None
+    job_title: str
+    department: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    relevance_score: float = Field(ge=0, le=1)
+    reason_for_contact: str
+
+
+class Contacts(BaseModel):
+    items: List[Contact]
+
+
 colleagues_agent = Agent[ColleagueSearchParams, List[InternalContact]](
     "openai:gpt-4o",
     deps_type=ColleagueSearchParams,
@@ -78,10 +92,11 @@ async def _run_browser_use_task(task: str) -> List[Dict[str, Any]]:
         return []
 
     profile = BrowserProfile(
-        minimum_wait_page_load_time=0.1,
-        wait_between_actions=0.2,
+        minimum_wait_page_load_time=0.5,
+        wait_between_actions=0.5,
         headless=False,
         keep_alive=False,
+        timeout=600
     )
     browser = Browser(browser_profile=profile)
     llm = ChatOpenAI(model="gpt-4.1-mini")
@@ -91,20 +106,46 @@ async def _run_browser_use_task(task: str) -> List[Dict[str, Any]]:
         browser=browser,
         llm=llm,
         flash_mode=True,
+        output_model_schema=Contacts,
         extend_system_message=(
-            "Return results strictly as a compact JSON array with keys: "
-            "name, job_title, department, linkedin_url, email, relevance_score, reason_for_contact."
+            "Return strictly as a JSON object with key 'items' containing an array of objects. "
+            "Each object must have keys: name, job_title, department, linkedin_url, email, relevance_score, reason_for_contact."
         ),
     )
     try:
         result = await agent.run()
-        if isinstance(result, str):
-            parsed = _extract_json_list(result)
+
+        parsed: List[Dict[str, Any]] = []
+
+        # Prefer Browser-Use structured output when available
+        if hasattr(result, "structured_output") and getattr(result, "structured_output"):
+            so = getattr(result, "structured_output")
+            if isinstance(so, BaseModel):
+                data_obj = so.model_dump()
+            elif isinstance(so, dict):
+                data_obj = so
+            else:
+                try:
+                    data_obj = json.loads(str(so))
+                except Exception:
+                    data_obj = {}
+
+            items = data_obj.get("items") or []
+            for it in items:
+                if isinstance(it, BaseModel):
+                    it = it.model_dump()
+                if isinstance(it, dict):
+                    parsed.append(it)
         else:
-            text = ""
-            if isinstance(result, dict):
-                text = result.get("final_result") or result.get("result") or ""
-            parsed = _extract_json_list(text)
+            # Fallback to legacy text parsing
+            if isinstance(result, str):
+                parsed = _extract_json_list(result)
+            else:
+                text = ""
+                if isinstance(result, dict):
+                    text = result.get("final_result") or result.get("result") or ""
+                parsed = _extract_json_list(text)
+
         return parsed
     except Exception as e:
         logger.error(f"Browser-Use LinkedIn task failed: {e}")
@@ -174,6 +215,78 @@ async def search_linkedin_direct(company: str, departments: List[str], keywords:
         action="searched_linkedin_direct",
         details={"company": company, "found_count": len(results)},
     )
+    return results
+
+
+async def linkedin_outreach_direct(
+    title_keyword: str,
+    send_messages: bool = False,
+    message_template: Optional[str] = None,
+    send_connection_note: bool = False,
+    connection_note_template: Optional[str] = None,
+    max_actions: int = 5,
+    dry_run: bool = True,
+) -> List[Dict[str, Any]]:
+    """
+    Direct LinkedIn outreach for colleagues with specific title filtering.
+    
+    Args:
+        title_keyword: Job title to search for (e.g., "Bioinformatics", "Data Scientist")
+        send_messages: Send messages to already-connected profiles
+        message_template: Custom message template (max 600 chars)
+        send_connection_note: Include note with connection requests
+        connection_note_template: Custom connection note (max 280 chars)
+        max_actions: Maximum outreach actions to perform
+        dry_run: Preview actions without sending (safety default)
+    
+    Returns:
+        List of outreach action results
+    """
+    from app.core.scrapers.linkedin_scraper import LinkedInScraper
+    
+    if not settings.LINKEDIN_EMAIL or not settings.LINKEDIN_PW or not settings.LINKEDIN_COMPANY_URL:
+        logger.warning("LinkedIn credentials missing for outreach")
+        return [{"error": "LinkedIn credentials not configured", "action": "config_error"}]
+    
+    # Default templates for cancer research context
+    default_message = (
+        "Hi! I'm working on cancer research data discovery and would love to connect. "
+        "We're building tools to help researchers find relevant biological datasets faster. "
+        "Would you be interested in discussing potential collaboration opportunities?"
+    )
+    
+    default_connection_note = (
+        "Hi! I'm working on cancer research data discovery tools and would love to connect "
+        "to discuss potential collaboration opportunities."
+    )
+    
+    scraper = LinkedInScraper(headless=not bool(getattr(settings, "DEBUG", False)))
+    results = await scraper.find_company_employees(
+        company="",  # Not used for logged-in workflow
+        departments=[],  # Using title_keyword instead
+        keywords=[],
+        max_results=0,  # Not used for outreach
+        login=True,
+        title_keyword=title_keyword,
+        send_messages=send_messages,
+        message_template=message_template or default_message,
+        send_connection_note=send_connection_note,
+        connection_note_template=connection_note_template or default_connection_note,
+        max_actions=max_actions,
+        dry_run=dry_run,
+    )
+    
+    await log_provenance(
+        actor="colleagues_agent",
+        action="linkedin_outreach",
+        details={
+            "title_keyword": title_keyword,
+            "actions_attempted": len(results),
+            "dry_run": dry_run,
+            "max_actions": max_actions,
+        },
+    )
+    
     return results
 
 

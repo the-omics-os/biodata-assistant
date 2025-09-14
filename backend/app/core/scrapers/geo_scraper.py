@@ -40,6 +40,11 @@ class GEODataset(BaseModel):
     link: Optional[str] = None
 
 
+class GEODatasets(BaseModel):
+    """Structured output wrapper to enable result.structured_output parsing."""
+    items: List[GEODataset]
+
+
 class GEOScraper:
     """
     NCBI GEO scraper using Browser-Use
@@ -58,10 +63,11 @@ class GEOScraper:
         if BrowserProfile is not None:
             try:
                 self.browser_profile = BrowserProfile(
-                    minimum_wait_page_load_time=0.5,
-                    wait_between_actions=0.3,
+                    minimum_wait_page_load_time=0.3,
+                    wait_between_actions=0.1,
                     headless=self.headless,
-                    keep_alive=True,
+                    keep_alive=False,
+                    timeout=600
                 )
             except Exception:
                 self.browser_profile = None
@@ -117,8 +123,9 @@ Speed optimization instructions:
 
             # Task: use the GDS portal which routes GEO/GDS series
             search_task = f"""
+You are a world class bioinformatician. You think and navigate the tools like one.
 1. Navigate to https://www.ncbi.nlm.nih.gov/gds
-2. In the search box, search for: {query}
+2. In the search box, search for: {query}. Ensure that you use the exact query provided using specialized syntax.
 3. For the first {max_results} results, extract:
    - accession (GSE or GDS)
    - title
@@ -126,8 +133,8 @@ Speed optimization instructions:
    - modalities (e.g., RNA-seq, scRNA-seq, microarray, proteomics)
    - sample_size (approximate integer)
    - access_type (public/request/restricted)
-   - link (result page)
-4. Return strictly as a JSON array
+   - link to the entry (result page, example https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE302345)
+4. Return strictly as a JSON object with key 'items' containing an array of the extracted objects
 """
 
             # Fast LLM as per docs
@@ -139,7 +146,8 @@ Speed optimization instructions:
                 llm=llm,
                 flash_mode=True,
                 browser_profile=self.browser_profile,
-                extend_system_message=self.speed_prompt,
+                output_model_schema=GEODatasets,
+                # extend_system_message=self.speed_prompt,
             )
 
             result = await agent.run(max_steps=15)  # type: ignore[func-returns-value]
@@ -195,15 +203,59 @@ Extract:
 - contact_name and contact_email (if provided)
 - download_url (processed data link if available)
 - pubmed_id and publication_url (if available)
-Return strictly as JSON with keys: contact_name, contact_email, download_url, pubmed_id, publication_url
+Return strictly as a JSON object with keys: contact_name, contact_email, download_url, pubmed_id, publication_url
 """
         try:
-            # Chain a follow-up task on the same agent/browser session
-            agent.add_new_task(detail_task)
-            detail_result = await agent.run(max_steps=6)  # type: ignore[func-returns-value]
+            # Prefer a dedicated agent with structured output for enrichment
+            if BrowserAgent is not None and ChatOpenAI is not None and self.browser is not None:
+                from pydantic import BaseModel as _BM  # alias to avoid shadowing
 
-            enrichment = self._parse_detail_result(detail_result)
-            dataset.update(enrichment)
+                class GEOEnrichment(_BM):
+                    contact_name: Optional[str] = None
+                    contact_email: Optional[str] = None
+                    download_url: Optional[str] = None
+                    pubmed_id: Optional[str] = None
+                    publication_url: Optional[str] = None
+
+                llm = ChatOpenAI(model="gpt-4.1-mini")
+                enrich_agent = BrowserAgent(
+                    task=detail_task,
+                    browser=self.browser,
+                    llm=llm,
+                    flash_mode=True,
+                    browser_profile=self.browser_profile,
+                    output_model_schema=GEOEnrichment,
+                )
+                detail_result = await enrich_agent.run(max_steps=6)  # type: ignore[func-returns-value]
+
+                enrichment_obj: Dict[str, Any] = {}
+                if hasattr(detail_result, "structured_output") and getattr(detail_result, "structured_output"):
+                    so = getattr(detail_result, "structured_output")
+                    if isinstance(so, _BM):
+                        enrichment_obj = so.model_dump()
+                    elif isinstance(so, dict):
+                        enrichment_obj = so
+                    else:
+                        try:
+                            enrichment_obj = json.loads(str(so))
+                        except Exception:
+                            enrichment_obj = {}
+                else:
+                    enrichment_obj = self._parse_detail_result(detail_result)
+
+                dataset.update({
+                    "contact_name": enrichment_obj.get("contact_name"),
+                    "contact_email": enrichment_obj.get("contact_email"),
+                    "download_url": enrichment_obj.get("download_url"),
+                    "pubmed_id": enrichment_obj.get("pubmed_id"),
+                    "publication_url": enrichment_obj.get("publication_url"),
+                })
+            else:
+                # Fallback to chaining task on existing agent
+                agent.add_new_task(detail_task)
+                detail_result = await agent.run(max_steps=6)  # type: ignore[func-returns-value]
+                enrichment = self._parse_detail_result(detail_result)
+                dataset.update(enrichment)
         except Exception as e:
             logger.debug(f"Detail task failed for {acc}: {e}")
 
@@ -212,14 +264,42 @@ Return strictly as JSON with keys: contact_name, contact_email, download_url, pu
     def _parse_search_results(self, result: Any) -> List[Dict[str, Any]]:
         """
         Parse agent output into structured datasets (list of dicts).
-        We expect a JSON array or a wrapper with 'final_result'/'result'.
+        Prefer structured_output from Browser-Use when available.
         """
-        text = self._stringify_result(result)
-        data = self._extract_json_list(text)
+        # 1) Prefer structured output
+        try:
+            if hasattr(result, "structured_output") and getattr(result, "structured_output"):
+                so = getattr(result, "structured_output")
+                if isinstance(so, BaseModel):
+                    data_obj = so.model_dump()
+                elif isinstance(so, dict):
+                    data_obj = so
+                else:
+                    try:
+                        data_obj = json.loads(str(so))
+                    except Exception:
+                        data_obj = {}
+                items = data_obj.get("items") or []
+                raw_list: List[Dict[str, Any]] = []
+                for it in items:
+                    if isinstance(it, BaseModel):
+                        it = it.model_dump()
+                    if not isinstance(it, dict):
+                        try:
+                            it = dict(it)  # type: ignore[arg-type]
+                        except Exception:
+                            continue
+                    raw_list.append(it)
+            else:
+                raise ValueError("No structured_output available")
+        except Exception:
+            # Fallback to legacy parsing
+            text = self._stringify_result(result)
+            raw_list = self._extract_json_list(text)
 
         # Normalize field names for downstream compatibility
         normalized: List[Dict[str, Any]] = []
-        for item in data:
+        for item in raw_list:
             try:
                 normalized.append(
                     {
@@ -310,69 +390,6 @@ Return strictly as JSON with keys: contact_name, contact_email, download_url, pu
             except Exception:
                 return []
         return []
-
-    def _mock_results(self, query: str, max_results: int) -> List[Dict[str, Any]]:
-        """Return generic mock GEO results for MVP/demo when scraping is unavailable."""
-        q = (query or "").strip()
-        title1 = f"{q} dataset A".strip() if q else "Dataset A"
-        title2 = f"{q} dataset B".strip() if q else "Dataset B"
-        title3 = f"{q} dataset C".strip() if q else "Dataset C"
-
-        base = [
-            {
-                "accession": "GSE100001",
-                "title": title1,
-                "organism": "Homo sapiens",
-                "modalities": ["rna-seq"],
-                "cancer_types": [],
-                "sample_size": 120,
-                "access_type": "public",
-                "download_url": "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE100nnn/GSE100001/suppl/",
-                "publication_url": None,
-                "pubmed_id": None,
-                "contact_name": "Dr. Jane Doe",
-                "contact_email": "jane.doe@example.org",
-                "link": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE100001",
-            },
-            {
-                "accession": "GSE100002",
-                "title": title2,
-                "organism": "Homo sapiens",
-                "modalities": ["scrna-seq"],
-                "cancer_types": [],
-                "sample_size": 45000,  # cells
-                "access_type": "public",
-                "download_url": "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE100nnn/GSE100002/suppl/",
-                "publication_url": None,
-                "pubmed_id": None,
-                "contact_name": "Dr. John Smith",
-                "contact_email": "john.smith@example.org",
-                "link": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE100002",
-            },
-            {
-                "accession": "GSE100003",
-                "title": title3,
-                "organism": "Homo sapiens",
-                "modalities": ["proteomics"],
-                "cancer_types": [],
-                "sample_size": 80,
-                "access_type": "request",
-                "download_url": None,
-                "publication_url": None,
-                "pubmed_id": None,
-                "contact_name": None,
-                "contact_email": None,
-                "link": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE100003",
-            },
-        ]
-
-        tokens = [t for t in re.split(r"\s+", q.lower()) if t]
-        def matches(item: Dict[str, Any]) -> bool:
-            title = (item.get("title") or "").lower()
-            return any(tok in title for tok in tokens) if tokens else True
-
-        filtered = [i for i in base if matches(i)] or base
-        return filtered[:max_results]
 
     async def _log_provenance(self, action: str, details: Dict[str, Any]) -> None:
         """Log action for audit trail"""

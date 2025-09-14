@@ -1,0 +1,26 @@
+[
+  {
+    "accession": "GSE278979",
+    "title": "Transcriptional programs of cell identity and p53-induced stress responses are associated with distinctive features of spatial genome organization [RNA-seq]",
+    "description": null,
+    "modalities": [
+      "Expression profiling by high throughput sequencing"
+    ],
+    "cancer_types": [
+      "breast",
+      "lung"
+    ],
+    "sample_size": 40,
+    "access_type": "public",
+    "download_url": "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE278nnn/GSE278979/soft/",
+    "contact_info": {
+      "name": "Robert Tjian",
+      "email": "jmlim@berkeley.edu"
+    },
+    "link": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE278979",
+    "relevance_score": 0.0,
+    "database": "GEO",
+    "contact_name": "Robert Tjian",
+    "contact_email": "jmlim@berkeley.edu"
+  }
+]

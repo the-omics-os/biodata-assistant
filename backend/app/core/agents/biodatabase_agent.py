@@ -51,33 +51,32 @@ bio_database_agent = Agent[DatabaseSearchParams, List[DatasetCandidate]](
     deps_type=DatabaseSearchParams,
     output_type=List[DatasetCandidate],
     instructions=(
-        "You are an expert biological database search specialist optimized for cancer research data discovery.\n"
-        "Use advanced search strategies with Boolean operators, specific filters, and step-by-step methodology.\n"
-        "\n"
-        "**Search Strategy Framework:**\n"
-        "1. Construct optimized queries with Boolean operators (AND, OR, NOT)\n"
-        "2. Apply database-specific filters (date ranges, organisms, file types)\n"
-        "3. Validate metadata requirements (treatment response, timepoints, clinical annotations)\n"
-        "4. Prioritize datasets with clinical metadata and structured annotations\n"
-        "5. Score relevance based on sample size, data quality, and research context\n"
-        "\n"
-        "**Query Construction Rules:**\n"
-        "- Use quoted terms for exact phrases: \"single-cell RNA-seq\", \"NSCLC\"\n"
-        "- Combine synonyms with OR: (\"PD-1\" OR \"PD-L1\" OR \"pembrolizumab\")\n"
-        "- Include treatment/response terms: (\"responder\" OR \"resistance\" OR \"sensitive\")\n"
-        "- Add timepoint indicators: (\"pre-treatment\" OR \"post-treatment\" OR \"longitudinal\")\n"
-        "- Specify data modalities: (\"RNA-seq\" OR \"scRNA-seq\" OR \"proteomics\")\n"
-        "\n"
-        "**Metadata Validation Requirements:**\n"
-        "- Clinical datasets MUST contain treatment response data\n"
-        "- Drug resistance studies MUST have sensitive vs resistant classifications\n"
-        "- Immunotherapy datasets MUST include biomarker status (PD-L1, TMB, etc.)\n"
-        "- Single-cell studies MUST specify cell type annotations\n"
-        "- Longitudinal studies MUST have multiple timepoints\n"
-        "\n"
-        "**Output Format:**\n"
-        "Return structured JSON with relevance scoring and metadata validation flags.\n"
-        "Prioritize datasets with complete clinical annotations and accessible data files.\n"
+        """
+        You are an expert biological database search specialist optimized for cancer research data discovery.
+
+        Use advanced search strategies with Boolean operators, specific filters, and step-by-step methodology.
+
+        Search Strategy Framework:
+        1. Construct optimized queries with Boolean operators (AND, OR, NOT)
+        2. Apply database-specific filters (date ranges, organisms, file types)
+        3. Validate metadata requirements (treatment response, timepoints, clinical annotations)
+        4. Prioritize datasets with clinical metadata and structured annotations
+        5. Score relevance based on sample size, data quality, and research context
+
+        Query Construction Rules:
+        - Use quoted terms for exact phrases: "single-cell RNA-seq", "NSCLC"
+        - Combine synonyms with OR: ("PD-1" OR "PD-L1" OR "pembrolizumab")
+        - Include treatment/response terms: ("responder" OR "resistance" OR "sensitive")
+        - Add timepoint indicators: ("pre-treatment" OR "post-treatment" OR "longitudinal")
+        - Specify data modalities: ("RNA-seq" OR "scRNA-seq" OR "proteomics")
+        Example queries: 
+        - "P53 lung cancer RNA-seq" → ("TP53" OR "p53") AND ("lung cancer" OR "NSCLC") AND ("RNA-seq" OR "transcriptome")
+        - "immunotherapy resistance" → ("PD-1" OR "PD-L1" OR "checkpoint inhibitor") AND ("resistance" OR "non-responder")
+
+        Output Format:
+        Return structured JSON with relevance scoring and metadata validation flags.
+        Prioritize datasets with complete clinical annotations and accessible data files.
+        """
     ),
 )
 
@@ -106,57 +105,57 @@ def _extract_json_list(text: str) -> List[Dict[str, Any]]:
     return []
 
 
-async def _run_browser_use_task(task: str) -> List[Dict[str, Any]]:
-    """
-    Execute a Browser-Use task, returning parsed JSON list per output contract.
-    """
-    if BrowserAgent is None or Browser is None or ChatOpenAI is None:
-        logger.warning("browser_use not available; returning empty results")
-        return []
+# async def _run_browser_use_task(task: str) -> List[Dict[str, Any]]:
+#     """
+#     Execute a Browser-Use task, returning parsed JSON list per output contract.
+#     """
+#     if BrowserAgent is None or Browser is None or ChatOpenAI is None:
+#         logger.warning("browser_use not available; returning empty results")
+#         return []
 
-    # Speed-optimized profile; keep headless=False for development visibility
-    profile = BrowserProfile(
-        minimum_wait_page_load_time=0.1,
-        wait_between_actions=0.2,
-        headless=False,
-        keep_alive=False,
-    )
-    browser = Browser(browser_profile=profile)
+#     # Speed-optimized profile; keep headless=False for development visibility
+#     profile = BrowserProfile(
+#         minimum_wait_page_load_time=0.1,
+#         wait_between_actions=0.2,
+#         headless=False,
+#         keep_alive=False,
+#     )
+#     browser = Browser(browser_profile=profile)
 
-    # Use a fast model for browsing assistant
-    llm = ChatOpenAI(model="gpt-4.1-mini")
+#     # Use a fast model for browsing assistant
+#     llm = ChatOpenAI(model="gpt-4.1-mini")
 
-    agent = BrowserAgent(
-        task=task,
-        browser=browser,
-        llm=llm,
-        flash_mode=True,
-        extend_system_message=(
-            "Return results strictly as a compact JSON array. "
-            "Avoid prose. Keys: accession, title, description, modalities, cancer_types, "
-            "sample_size, access_type, download_url, contact_info, link."
-        ),
-    )
+#     agent = BrowserAgent(
+#         task=task,
+#         browser=browser,
+#         llm=llm,
+#         flash_mode=True,
+#         extend_system_message=(
+#             "Return results strictly as a compact JSON array. "
+#             "Avoid prose. Keys: accession, title, description, modalities, cancer_types, "
+#             "sample_size, access_type, download_url, contact_info, link."
+#         ),
+#     )
 
-    try:
-        result = await agent.run()
-        if isinstance(result, str):
-            parsed = _extract_json_list(result)
-        else:
-            # Some versions return dict-like with `final_result` or `result`
-            text = ""
-            if isinstance(result, dict):
-                text = result.get("final_result") or result.get("result") or ""
-            parsed = _extract_json_list(text)
-        return parsed
-    except Exception as e:
-        logger.error(f"Browser-Use task failed: {e}")
-        return []
-    finally:
-        try:
-            await browser.kill()
-        except Exception:
-            pass
+#     try:
+#         result = await agent.run()
+#         if isinstance(result, str):
+#             parsed = _extract_json_list(result)
+#         else:
+#             # Some versions return dict-like with `final_result` or `result`
+#             text = ""
+#             if isinstance(result, dict):
+#                 text = result.get("final_result") or result.get("result") or ""
+#             parsed = _extract_json_list(text)
+#         return parsed
+#     except Exception as e:
+#         logger.error(f"Browser-Use task failed: {e}")
+#         return []
+#     finally:
+#         try:
+#             await browser.kill()
+#         except Exception:
+#             pass
 
 
 @bio_database_agent.tool(retries=2)
@@ -273,31 +272,6 @@ async def search_geo_direct(query: str, max_results: int) -> List[Dict[str, Any]
 
 
 @bio_database_agent.tool(retries=2)
-async def optimize_search_query(ctx: RunContext[DatabaseSearchParams]) -> str:
-    """
-    Dynamically optimize the search query using domain expertise and Boolean operators.
-    
-    Analyze the research question and construct an optimized query with:
-    - Boolean operators (AND, OR, NOT)
-    - Quoted exact phrases
-    - Synonym expansion
-    - Domain-specific terminology
-    - Filter constraints
-    
-    Example transformations:
-    - "P53 lung cancer RNA-seq" → ("TP53" OR "p53") AND ("lung cancer" OR "NSCLC") AND ("RNA-seq" OR "transcriptome")
-    - "immunotherapy resistance" → ("PD-1" OR "PD-L1" OR "checkpoint inhibitor") AND ("resistance" OR "non-responder")
-    
-    Return the optimized query string for database search.
-    """
-    original_query = ctx.deps.query
-    
-    # The LLM agent will use its domain knowledge to construct the optimized query
-    # This approach is dynamic and doesn't rely on hardcoded mappings
-    return original_query  # The agent will actually transform this
-
-
-@bio_database_agent.tool(retries=2)
 async def validate_metadata_requirements(ctx: RunContext[DatabaseSearchParams], dataset: Dict[str, Any]) -> Dict[str, Any]:
     """
     Dynamically validate dataset metadata against research requirements.
@@ -337,7 +311,7 @@ async def search_with_advanced_strategy(ctx: RunContext[DatabaseSearchParams]) -
     This implements the professional search methodology from the template.
     """
     # Step 1: Get optimized query
-    optimized_query = await optimize_search_query(ctx)
+    optimized_query = ctx.query
     
     # Step 2: Execute search with optimized query
     scraper = GEOScraper(headless=not bool(getattr(settings, "DEBUG", False)))

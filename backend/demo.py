@@ -420,7 +420,7 @@ async def main() -> None:
 
     # Interactive inputs
     default_suggestions = [
-        "I'm looking for a dataset from human plasma proteomics & transcriptomics in breast or lung cancer. I'm curious about the behavior of P53 mutations.",
+        "I'm looking for a dataset from human single-cell transcriptome in breast or lung cancer. I'm curious about the behavior of P53 mutations.",
         "Triple negative breast cancer proteomics and transcriptomics datasets",
         "P53 pathway proteomics in breast cancer cohorts",
     ]
@@ -441,7 +441,7 @@ async def main() -> None:
     if args.max_results is not None:
         max_results = max(1, int(args.max_results))
     else:
-        max_results = max(1, IntPrompt.ask("Max results to fetch from GEO", default=5))
+        max_results = max(1, IntPrompt.ask("Max results to fetch from GEO", default=1))
 
     # Refine research requirements
     reqs = prompt_research_requirements()
@@ -525,6 +525,16 @@ async def main() -> None:
         try:
             datasets = await run_geo(search_req.query, max_results)
             progress.update(tk, description=f"[green]✓ GEO results: {len(datasets)}", completed=True)
+            # Pretty print results immediately
+            try:
+                console.print("\n[bold green]📊 GEO Results (preview)[/bold green]")
+                render_datasets(datasets)
+            except Exception:
+                # Fallback to simple JSON pretty print
+                try:
+                    console.print_json(data=datasets)
+                except Exception:
+                    console.print(str(datasets))
             # Save dataset artifacts
             try:
                 ds_rows = [
@@ -600,7 +610,6 @@ async def main() -> None:
 
     if plan:
         render_plan(plan)
-    render_datasets(datasets)
     render_contacts(contacts)
 
     # Outreach selection

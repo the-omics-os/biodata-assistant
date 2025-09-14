@@ -1,0 +1,25 @@
+[
+  {
+    "accession": "GSE53049",
+    "title": "Pharmacological levels of Withaferin A (Withania somnifera) trigger clinically relevant anticancer effects specific to triple negative breast cancer cells",
+    "description": null,
+    "modalities": [
+      "Expression profiling by array"
+    ],
+    "cancer_types": [
+      "breast cancer"
+    ],
+    "sample_size": 12,
+    "access_type": "public",
+    "download_url": "Processed data included within Sample table (no direct URL provided)",
+    "contact_info": {
+      "name": "Ken Op de Beeck",
+      "email": "ken.opdebeeck@uantwerpen.be"
+    },
+    "link": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE53049",
+    "relevance_score": 0.0,
+    "database": "GEO",
+    "contact_name": "Ken Op de Beeck",
+    "contact_email": "ken.opdebeeck@uantwerpen.be"
+  }
+]

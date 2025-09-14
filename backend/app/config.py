@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     REQUESTER_NAME: str = Field(default="Kevin Yar", description="Default requester name")
     REQUESTER_TITLE: str = Field(default="CEO", description="Default requester title")
 
+    # LinkedIn Credentials
+    LINKEDIN_EMAIL: Optional[str] = Field(default=None, description="LinkedIn login email")
+    LINKEDIN_PW: Optional[str] = Field(default=None, description="LinkedIn login password")
+    LINKEDIN_COMPANY_URL: Optional[str] = Field(default=None, description="LinkedIn company URL for employee search")
+    LINKEDIN_OUTREACH_ENABLED: bool = Field(default=False, description="Enable LinkedIn outreach (safety flag)")
+
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = Field(default=60, description="Rate limit per minute")
 
