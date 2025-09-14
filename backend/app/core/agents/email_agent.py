@@ -5,6 +5,7 @@ from typing import Dict, Optional
 
 from pydantic import BaseModel, EmailStr
 from pydantic_ai import Agent, RunContext, ModelRetry
+from pydantic_ai.models.bedrock import BedrockConverseModel
 from app.config import settings
 from app.core.utils.provenance import log_provenance
 from app.utils.email_templates import generate_email_template
@@ -41,9 +42,10 @@ class EmailResult(BaseModel):
     requires_approval: bool = False
     error_message: Optional[str] = None
 
+model =BedrockConverseModel( "us.anthropic.claude-sonnet-4-20250514-v1:0")
 
 email_agent = Agent[EmailOutreachParams, EmailResult](
-    "openai:gpt-4o",
+    model,
     deps_type=EmailOutreachParams,
     output_type=EmailResult,
     instructions=(

@@ -6,6 +6,7 @@ import logging
 import re
 import time
 from typing import Any, Dict, List, Optional
+import os
 
 from pydantic import BaseModel
 
@@ -14,14 +15,10 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 # Optional Browser-Use imports with fallbacks
-try:
-    from browser_use import Agent as BrowserAgent
-    from browser_use import Browser, BrowserProfile, ChatOpenAI
-except Exception:  # pragma: no cover - allow import-time resilience
-    BrowserAgent = None  # type: ignore[assignment]
-    Browser = None  # type: ignore[assignment]
-    BrowserProfile = None  # type: ignore[assignment]
-    ChatOpenAI = None  # type: ignore[assignment]
+from browser_use import Agent as BrowserAgent
+from browser_use import Browser, BrowserProfile
+from browser_use.llm import ChatAWSBedrock
+
 
 
 class LinkedInContact(BaseModel):
@@ -78,16 +75,59 @@ class LinkedInScraper:
         self.browser = None
         if Browser is not None:
             try:
-                if self.browser_profile is not None:
-                    self.browser = Browser(browser_profile=self.browser_profile)  # type: ignore[arg-type]
-                else:
-                    self.browser = Browser(
-                        user_data_dir="./temp-profile-linkedin",
-                        headless=self.headless,
-                    )
+                # Always use a fixed user_data_dir to persist session across separate instances
+                self.browser = Browser(
+                    user_data_dir="./temp-profile-linkedin",
+                    headless=self.headless,
+                )
             except Exception as e:
                 logger.warning(f"Failed to initialize Browser: {e}")
                 self.browser = None
+
+    async def open_login_page(self, keep_open: bool = True) -> Dict[str, Any]:
+        """
+        Open LinkedIn login page and keep the browser open for manual authentication.
+        Returns {"ok": True, "status": "opened"} on success, otherwise {"ok": False, "status": "unavailable"|"error", "error": "..."}.
+        """
+
+        try:
+            try:
+                await self.browser.start()  # type: ignore[func-returns-value]
+            except Exception:
+                pass
+
+            llm = ChatAWSBedrock(
+                model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+                aws_region="us-east-1",
+                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            )
+            task = """
+1. Navigate to https://www.linkedin.com/login
+2. Wait until the login page is fully loaded and username/password fields are visible
+3. Do not enter any credentials and do not submit the form
+4. When the page is visible, return "successful" and STOP
+"""
+            agent = BrowserAgent(
+                task=task,
+                browser=self.browser,
+                llm=llm,
+                flash_mode=True,
+                browser_profile=self.browser_profile,
+            )
+            result = await agent.run(max_steps=4)  # type: ignore[func-returns-value]
+            text = self._stringify_result(result).lower()
+            ok = "successful" in text
+            # Keep the browser open so the user can log in manually
+            if not keep_open:
+                try:
+                    await self.browser.kill()  # type: ignore[func-returns-value]
+                except Exception:
+                    pass
+            return {"ok": ok, "status": "successful" if ok else "error"}
+        except Exception as e:
+            logger.error(f"open_login_page error: {e}")
+            return {"ok": False, "status": "error", "error": str(e)}
 
     async def ensure_logged_in(self) -> tuple[bool, str]:
         """
@@ -97,7 +137,7 @@ class LinkedInScraper:
         """
         if self.logged_in:
             return True, "success"
-        if BrowserAgent is None or self.browser is None or ChatOpenAI is None:
+        if BrowserAgent is None or self.browser is None or ChatAWSBedrock is None:
             return False, "unavailable"
 
         try:
@@ -120,13 +160,14 @@ class LinkedInScraper:
         departments: List[str],
         keywords: List[str],
         max_results: int = 10,
+        skip_login_check: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         After successful login, navigate to company employees page and extract contact-like results
         without performing any connect/message actions.
         Returns a list of LinkedInContact-shaped dicts.
         """
-        if BrowserAgent is None or self.browser is None or ChatOpenAI is None:
+        if BrowserAgent is None or self.browser is None or ChatAWSBedrock is None:
             return []
 
         try:
@@ -135,7 +176,7 @@ class LinkedInScraper:
             except Exception:
                 pass
 
-            if not self.logged_in:
+            if not skip_login_check and not self.logged_in:
                 ok, _status = await self.ensure_logged_in()
                 if not ok:
                     return []
@@ -156,7 +197,12 @@ Return strictly as a JSON array.
 Notes: {filter_info}
 """
 
-            llm = ChatOpenAI(model="gpt-4.1-mini")
+            llm = ChatAWSBedrock(
+                model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+                aws_region="us-east-1",
+                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            )
             agent = BrowserAgent(
                 task=task,
                 browser=self.browser,
@@ -216,7 +262,7 @@ Notes: {filter_info}
             List of LinkedInActionResult dicts if login=True, else LinkedInContact dicts
         """
         # If Browser-Use is not available, return mock results for MVP/demo
-        if BrowserAgent is None or self.browser is None or ChatOpenAI is None:
+        if BrowserAgent is None or self.browser is None or ChatAWSBedrock is None:
             logger.warning("browser_use not available; returning mock LinkedIn results")
             results = self._mock_results(company, departments, keywords, max_results)
             await self._log_provenance(
@@ -332,7 +378,12 @@ Notes: {filter_info}
         if not settings.LINKEDIN_EMAIL or not settings.LINKEDIN_PW:
             return "missing_credentials"
 
-        llm = ChatOpenAI(model="gpt-4.1-mini")
+        llm = ChatAWSBedrock(
+            model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+            aws_region="us-east-1",
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        )
         
         login_task = f"""
 LinkedIn login task:
@@ -379,7 +430,12 @@ IMPORTANT: Do not log or expose the actual credentials in any output.
         if not settings.LINKEDIN_COMPANY_URL:
             return False
 
-        llm = ChatOpenAI(model="gpt-4.1-mini")
+        llm = ChatAWSBedrock(
+            model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+            aws_region="us-east-1",
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        )
         
         nav_task = f"""
 LinkedIn company navigation task:
@@ -409,7 +465,12 @@ LinkedIn company navigation task:
 
     async def _apply_filters(self, title_keyword: str) -> bool:
         """Apply title keyword filter in LinkedIn employee search"""
-        llm = ChatOpenAI(model="gpt-4.1-mini")
+        llm = ChatAWSBedrock(
+            model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+            aws_region="us-east-1",
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        )
         
         filter_task = f"""
 LinkedIn filtering task:
@@ -449,7 +510,12 @@ LinkedIn filtering task:
         dry_run: bool,
     ) -> List[Dict[str, Any]]:
         """Process profiles and perform connect/message actions"""
-        llm = ChatOpenAI(model="gpt-4.1-mini")
+        llm = ChatAWSBedrock(
+            model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+            aws_region="us-east-1",
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        )
         
         # Truncate templates to LinkedIn limits
         message_template = message_template[:600]
@@ -536,7 +602,12 @@ LinkedIn employee search task:
 5. Return strictly as a JSON array.
 """
 
-            llm = ChatOpenAI(model="gpt-4.1-mini")
+            llm = ChatAWSBedrock(
+                model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+                aws_region="us-east-1",
+                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            )
 
             agent = BrowserAgent(
                 task=search_task,
@@ -723,3 +794,5 @@ LinkedIn employee search task:
             await log_provenance(actor="linkedin_scraper", action=action, details=details)
         except Exception as e:
             logger.debug(f"Provenance logging failed: {e}")
+
+

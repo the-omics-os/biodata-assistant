@@ -4,7 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Biodata Assistant is a multi-agent system that automates cancer research data discovery and outreach workflows. It reduces the time researchers spend finding biological datasets from 2-3 days to minutes by automating database searches, colleague discovery, and email outreach.
+Biodata Assistant is an AI-powered multi-agent system that automates cancer research data discovery and outreach. It reduces dataset triage from days to minutes by orchestrating live web scraping (GEO, LinkedIn), colleague discovery, and human-gated outreach.
+
+## Key Features
+
+- **Live GEO scraping with Browser-Use**
+  - Fast DOM navigation tuned for reliability
+  - Structured outputs via Pydantic and result.structured_output
+- **LinkedIn colleague discovery**
+  - Manual Login workflow (human-in-the-loop, no credential entry by the agent)
+  - Public search fallback when a logged-in session is unavailable
+- **Human-gated email outreach** via AgentMail (optional)
+- **Full provenance logging** for auditability
+- **Rich TUI** for end-to-end demonstration
 
 ## Core Architecture
 
@@ -22,6 +34,12 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate  # or `.venv\Scripts\activate` on Windows
 pip install -r requirements.txt
+```
+
+### Install Chromium for Browser-Use
+```bash
+# Install Chromium for Browser-Use (if needed)
+uvx playwright install chromium --with-deps --no-shell
 ```
 
 ### Running the Application
@@ -42,8 +60,11 @@ docker-compose up --build
 # Interactive terminal UI (recommended for testing)
 python backend/demo.py
 
-# With specific parameters
-python backend/demo.py --query "TP53 lung adenocarcinoma RNA-seq" --max-results 3 --show-browser --include-internal
+# Include LinkedIn search and show live browsers
+python backend/demo.py --include-internal --show-browser
+
+# Provide a research query and enable visible browsers
+python backend/demo.py --query "TP53 lung adenocarcinoma RNA-seq" --max-results 3 --show-browser
 ```
 
 ### Testing
@@ -53,6 +74,38 @@ python -m pytest tests/ -v
 python -m pytest tests/test_agents.py -v
 python -m pytest tests/test_integrations.py -v
 ```
+
+## Manual LinkedIn Login Workflow (Human-in-the-Loop)
+
+This repository uses a human-in-the-loop sign-in for LinkedIn. The agent will never type your credentials.
+
+### Workflow:
+1. The demo opens a persistent browser on https://www.linkedin.com/login.
+2. You log in manually in the visible browser window.
+3. In the TUI, press Enter to confirm you are signed in (keep the browser open).
+4. The agent continues with the same session for company employee discovery.
+5. If session reuse fails, the system falls back to public search automatically.
+
+### Technical notes:
+- The LinkedIn scraper uses a persistent user data directory at `./temp-profile-linkedin` so cookies survive across steps.
+- Entry points:
+  - `colleagues_agent.start_linkedin_login_session()` opens the login page and keeps the browser alive.
+  - `colleagues_agent.search_linkedin_direct(..., use_existing_session=True)` reuses your logged-in session to extract contacts.
+- Outreach flows that send connection requests/messages still require logged-in state and will be guarded.
+
+## Structured Outputs with Browser-Use
+
+To make scraping robust, agents validate outputs with Pydantic and prefer `result.structured_output` when available.
+
+### GEO scraping (`GEOScraper`):
+- Uses `output_model_schema=GEODatasets` and consumes `result.structured_output`.
+- Normalizes into strongly-typed fields (accession, title, organism, modalities, sample_size, etc.) with resilient fallbacks.
+
+### Colleagues agent (LinkedIn public browsing utility path):
+- Uses `output_model_schema=Contacts` for Browser-Use helper agents.
+- For deterministic direct search, returns normalized JSON in Python without free-form parsing.
+
+This avoids brittle string parsing and makes downstream filtering and export stable.
 
 ## Environment Variables
 
@@ -66,7 +119,11 @@ python -m pytest tests/test_integrations.py -v
 - `CORS_ORIGINS`: Frontend origins for CORS (comma-separated)
 - `DEBUG`: Enable debug mode (boolean)
 
-### Demo-specific
+### LinkedIn-specific (only if using outreach or agentic login fallback)
+- `LINKEDIN_COMPANY_URL`: The company page to navigate to employees when logged in
+- `LINKEDIN_EMAIL`, `LINKEDIN_PW`: Not required for manual login; only used by explicit outreach/agentic flows
+
+### Demo-specific (TUI defaults)
 - `REQUESTER_NAME`: Default requester name for outreach
 - `REQUESTER_EMAIL`: Default requester email
 - `REQUESTER_TITLE`: Default requester title
@@ -132,11 +189,18 @@ python -m pytest tests/test_integrations.py -v
 ## Troubleshooting
 
 ### Browser-Use Issues
-- **No browser window**: Ensure `settings.DEBUG=True` and `--show-browser` flag
+- **No browser window**: Use `--show-browser` and ensure `settings.DEBUG` is toggled by the demo automatically
+- **Chromium missing**: Install via `uvx playwright install chromium --with-deps --no-shell`
 - **Import errors**: Verify `browser-use>=0.1.0` installed
 - **Timeouts**: Increase wait times or reduce `max_results`
 
+### LinkedIn Issues
+- **LinkedIn anti-bot friction**: Use manual login as recommended (the default), or proceed with public search fallback
+- **Session failures**: The system automatically falls back to public search if logged-in session reuse fails
+- **Login issues**: Keep the browser window open during the manual login process
+
 ### Agent Issues
+- **OPENAI_API_KEY missing**: Set it in your shell or `.env` (the TUI will warn and can continue in reduced functionality)
 - **OpenAI API errors**: Verify `OPENAI_API_KEY` is set correctly
 - **Rate limiting**: Implement exponential backoff in agent calls
 - **Memory issues**: Agents are stateless; check prompt sizes

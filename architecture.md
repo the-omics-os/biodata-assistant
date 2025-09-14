@@ -13,24 +13,23 @@ Cancer researchers (bioinformaticians, data scientists, ML engineers) need to:
 ## System Components
 
 ### 1. Backend Infrastructure (FastAPI)
-- **Location**: `/backend`
-- **Technology**: Python 3.10+, FastAPI, SQLAlchemy, Pydantic
-- **Purpose**: RESTful API server providing endpoints for search, dataset management, and outreach
+- Location: `/backend`
+- Technology: Python 3.10+, FastAPI, SQLAlchemy, Pydantic
+- Purpose: RESTful API server providing endpoints for search, dataset management, and outreach
 
 ### 2. Multi-Agent System (Pydantic AI)
-- **Framework**: Pydantic AI with typed agents
-- **Agents**: 5 specialized agents for different workflow steps
-- **Orchestration**: Central orchestrator coordinates agent interactions
+- Framework: Pydantic AI with typed agents
+- Agents: 5 specialized agents for different workflow steps
+- Orchestration: Central orchestrator coordinates agent interactions
 
 ### 3. External Integrations
-- **Browser-Use**: Web scraping for NCBI/GEO and LinkedIn
-- **AgentMail**: Email automation and webhook handling
-- **Database**: SQLite (dev) / PostgreSQL (prod)
+- Browser-Use: Web scraping for NCBI/GEO and LinkedIn
+- AgentMail: Email automation and webhook handling
+- Database: SQLite (dev) / PostgreSQL (prod)
 
 ## Knowledge Graph - System Relationships
 
 ### Backend Infrastructure Relationships
-
 ```mermaid
 flowchart TD
     %% API Layer
@@ -80,7 +79,6 @@ flowchart TD
 ```
 
 ### Agent System Relationships
-
 ```mermaid
 flowchart TD
     %% Agent Hierarchy
@@ -152,7 +150,6 @@ flowchart TD
 ```
 
 ### External Integration Relationships
-
 ```mermaid
 flowchart TD
     %% Browser-Use Integration
@@ -218,7 +215,6 @@ flowchart TD
 ```
 
 ### Workflow Relationships
-
 ```mermaid
 flowchart TD
     %% Main Workflow
@@ -345,19 +341,19 @@ biodata-assistant/
 ## Key Technologies
 
 ### Core Stack
-- **Backend**: FastAPI (Python 3.10+)
-- **Database**: SQLAlchemy + SQLite/PostgreSQL
-- **Validation**: Pydantic
-- **Agents**: Pydantic AI
-- **Scraping**: Browser-Use
-- **Email**: AgentMail SDK
-- **Container**: Docker + Docker Compose
+- Backend: FastAPI (Python 3.10+)
+- Database: SQLAlchemy + SQLite/PostgreSQL
+- Validation: Pydantic
+- Agents: Pydantic AI
+- Scraping: Browser-Use
+- Email: AgentMail SDK
+- Container: Docker + Docker Compose
 
 ### Agent Technologies
-- **LLM Provider**: OpenAI GPT-4o / Anthropic Claude
-- **Agent Framework**: Pydantic AI with typed tools
-- **Browser Automation**: Browser-Use with Puppeteer
-- **Email Service**: AgentMail API
+- LLM Provider: OpenAI GPT-4o / Anthropic Claude
+- Agent Framework: Pydantic AI with typed tools
+- Browser Automation: Browser-Use with Puppeteer
+- Email Service: AgentMail API
 
 ## Security & Compliance
 
@@ -423,7 +419,6 @@ Frontend -> connects -> BackendAPI
 ## Success Metrics
 
 ### Key Performance Indicators
-
 ```mermaid
 flowchart LR
     TimeReduction[Time Reduction] --> Before[2-3 Days Before]
@@ -455,7 +450,6 @@ flowchart LR
 ## Environment Variables
 
 ### Required Configuration
-
 ```mermaid
 flowchart TD
     EnvVars[Environment Variables] --> OpenAIKey[OPENAI_API_KEY]
@@ -477,35 +471,44 @@ flowchart TD
     class LLMAgents,EmailAutomation,PostgreSQL,TaskQueue,FrontendAccess capability
 ```
 
-## Future Enhancements
+## Design Updates
 
-### Planned Features
+### Manual LinkedIn Login Workflow (Human-in-the-Loop)
+- The system no longer attempts agentic credential entry for LinkedIn.
+- Flow:
+  1. The colleagues agent opens the LinkedIn login page in a persistent browser session (`start_linkedin_login_session()`).
+  2. The user logs in manually while keeping the browser open.
+  3. On confirmation in the TUI, the colleagues agent reuses the same session to navigate to the employees page and extract contacts (`search_linkedin_direct(..., use_existing_session=True)`), with automatic fallback to public search if session reuse fails.
+- Persistence:
+  - The LinkedIn scraper uses a fixed `user_data_dir` (`./temp-profile-linkedin`) so cookies persist across steps and instances.
+  - The Browser-Use profile enables `keep_alive` to avoid premature browser termination during the login phase.
+- Safety & compliance:
+  - Credentials are never typed by the agent.
+  - The user retains full control of authentication.
+  - Provenance is logged for “manual login started” and subsequent LinkedIn actions.
 
-```mermaid
-flowchart TD
-    FutureFeatures[Future Enhancements] --> WebInterface[Web Interface]
-    FutureFeatures --> RealtimeUpdates[Realtime Updates]
-    FutureFeatures --> MLRanking[ML Ranking System]
-    FutureFeatures --> AutoFollowup[Auto Follow-up]
-    FutureFeatures --> IntegrationAPI[Integration API]
+### Structured Outputs and Typed Results
+- Browser-Use agents are configured (where applicable) with `output_model_schema` and results are consumed via `result.structured_output`.
+- GEO:
+  - `GEOScraper` uses `GEODatasets` (wrapper) for structured extraction and normalizes to downstream fields (accession, title, organism, modalities, sample_size, etc.) with robust fallbacks.
+- LinkedIn (agent helper paths):
+  - `Contacts` schema for structured contact lists when Browser-Use agent utilities are used.
+  - Deterministic “direct” paths return normalized JSON from Python logic (no free-form parsing).
 
-    WebInterface --> UserDashboard[User Dashboard]
-    RealtimeUpdates --> WebSockets[WebSocket Implementation]
-    MLRanking --> DatasetRelevance[Dataset Relevance Improvement]
-    AutoFollowup --> NoReplies[Handle No-Reply Scenarios]
-    IntegrationAPI --> OmicsOS[Export to OmicsOS]
+### Demo Alignment
+- The interactive TUI (`backend/demo.py`) now:
+  - Offers a manual LinkedIn login step that opens a persistent login page.
+  - Waits for the user to log in, then reuses the session for company employee discovery.
+  - Falls back to public LinkedIn search automatically if a logged-in session cannot be reused.
+- This ensures consistent UX and avoids anti-bot/credential risks while preserving end-to-end automation for non-sensitive steps.
 
-    classDef feature fill:#9c27b0
-    classDef implementation fill:#673ab7
-
-    class WebInterface,RealtimeUpdates,MLRanking,AutoFollowup,IntegrationAPI feature
-    class UserDashboard,WebSockets,DatasetRelevance,NoReplies,OmicsOS implementation
-```
+### Outreach Behavior
+- Login is only required for LinkedIn actions that need authenticated context.
+- Outreach sending remains human-gated with explicit TUI confirmation and PHI gate.
 
 ## Troubleshooting Guide
 
 ### Common Issues
-
 ```mermaid
 flowchart TD
     CommonIssues[Common Issues] --> BrowserTimeout[Browser Timeout]
@@ -528,185 +531,6 @@ flowchart TD
 ```
 
 ## Contact & Support
-
 This system was developed for the CodeRabbit hackathon to solve real pain points in cancer research data discovery. The architecture is designed to be extensible, compliant, and performant while maintaining a clear separation of concerns.
 
 ---
-
-**Note**: This architecture document uses triplet syntax (subject-predicate-object) throughout to facilitate knowledge graph construction and make relationships explicit for automated parsing and understanding.
-
-## Interactive Demo (TUI)
-
-The repository includes a professional, interactive terminal UI (TUI) that runs the real end-to-end backend workflow using live browsers and human-gated email sending.
-
-- Location: `backend/demo.py`
-- Purpose: Run real Browser-Use scraping (NCBI/GEO and optional LinkedIn) and optional AgentMail outreach with explicit user approval.
-- UX: Rich-powered TUI with prompts, live progress, and results tables; no hardcoded queries.
-
-### Demo Relationships
-
-```mermaid
-flowchart TD
-    %% TUI Setup and Dependencies
-    TUI[TUI Interactive Demo] --> DemoLocation[backend/demo.py]
-    TUI --> OpenAIKey[OPENAI_API_KEY Required]
-    TUI --> AgentMailKey[AGENTMAIL_API_KEY Optional]
-
-    %% User Input Prompts
-    TUI --> UserPrompts[User Input Prompts]
-    UserPrompts --> ResearchQuery[Research Query]
-    UserPrompts --> MaxResults[Max Results]
-    UserPrompts --> ShowBrowser[Show Browser Toggle]
-    UserPrompts --> IncludeInternalContacts[Include LinkedIn Search]
-
-    %% Debug Configuration
-    ShowBrowser --> DebugMode[settings.DEBUG = True]
-
-    %% Agent Invocations
-    TUI --> PlannerAgent[Planner Agent]
-    PlannerAgent --> WorkflowPlan[Workflow Plan Generation]
-
-    TUI --> BioDatabaseAgent[Bio-Database Agent]
-    BioDatabaseAgent --> BrowserUseFramework[Browser-Use Framework]
-    BioDatabaseAgent --> NCBISearch[NCBI/GEO Search]
-    BioDatabaseAgent --> DatasetCandidates[Dataset Candidates]
-
-    TUI --> ColleaguesAgent[Colleagues Agent Optional]
-    ColleaguesAgent --> LinkedInBrowser[Browser-Use LinkedIn]
-    ColleaguesAgent --> LinkedInSearch[LinkedIn Company Search]
-    ColleaguesAgent --> InternalContacts[Internal Contacts]
-
-    %% Results Rendering
-    TUI --> ResultsDisplay[Results Display]
-    ResultsDisplay --> DatasetsTable[Datasets Table]
-    ResultsDisplay --> ContactsTable[Contacts Table]
-
-    %% Human-in-the-Loop Workflow
-    TUI --> UserInteraction[User Interaction]
-    UserInteraction --> DatasetSelection[Dataset Selection for Outreach]
-    UserInteraction --> PHIApprovalGate[PHI Approval Gate]
-    UserInteraction --> EmailConfirmation[Email Send Confirmation]
-
-    %% Email Outreach
-    EmailConfirmation --> EmailAgent[Email Agent]
-    EmailAgent --> AgentMailClient[AgentMail Client]
-    EmailAgent --> OutreachEmails[Outreach Email Sending]
-    EmailAgent --> EmailProvenance[Email Provenance Logging]
-
-    %% Summary Generation
-    TUI --> SummarizerAgent[Summarizer Agent]
-    SummarizerAgent --> ExecutiveSummary[Executive Summary]
-
-    %% Audit Trail
-    TUI --> ProvenanceTrail[Complete Provenance Trail]
-
-    %% Safety Gates
-    PHIApprovalGate --> ManualApproval[Manual Approval Required]
-    EmailConfirmation --> ExplicitConsent[Explicit User Consent]
-
-    %% Styling
-    classDef tui fill:#4fc3f7
-    classDef agent fill:#81c784
-    classDef safety fill:#ff8a65
-    classDef output fill:#ba68c8
-    classDef user fill:#ffd54f
-
-    class TUI,ResultsDisplay,UserInteraction tui
-    class PlannerAgent,BioDatabaseAgent,ColleaguesAgent,EmailAgent,SummarizerAgent agent
-    class PHIApprovalGate,ManualApproval,ExplicitConsent safety
-    class DatasetsTable,ContactsTable,ExecutiveSummary,ProvenanceTrail output
-    class UserPrompts,DatasetSelection,EmailConfirmation user
-```
-
-### Demo Execution Flow
-
-1. Banner and environment validation
-   - Validates OPENAI_API_KEY for Browser-Use (required).
-   - If sending emails is requested, validates AGENTMAIL_API_KEY.
-
-2. Prompt-driven inputs
-   - Research query (with suggestions).
-   - Max results per source (default 5).
-   - Show live browsers (headless=False) toggle.
-   - Include internal colleagues (LinkedIn) toggle.
-   - Requester identity (name/email/title).
-   - Company name for LinkedIn (if enabled).
-
-3. Agent orchestration (explicit per step)
-   - planner_agent → plan summary (table)
-   - bio_database_agent (GEO) → datasets (live browser visible when ShowBrowser=true)
-   - colleagues_agent (LinkedIn, optional) → contacts (live browser visible)
-   - summarizer_agent → executive summary
-
-4. Outreach (human-in-the-loop)
-   - User selects datasets (indexes or “all”) where (access_type ∈ {request, restricted}) and contact_email is present.
-   - PHI safety: If titles contain hints (“clinical”, “patient”, “phi”), demo requires explicit approval.
-   - Email send requires explicit confirmation even when launched with `--send-emails`.
-   - AgentMail send result table (status, message_id, error).
-
-5. Summary and provenance
-   - Console summary with executive insights.
-   - Provenance logged for key actions.
-
-### How to Run the Demo
-
-- Interactive TUI (recommended):
-  ```
-  python backend/demo.py
-  ```
-- With flags:
-  ```
-  # Include internal LinkedIn search and show live browsers
-  python backend/demo.py --include-internal --show-browser
-
-  # Provide a query and enable email sending (still requires confirmation in TUI)
-  python backend/demo.py --query "TP53 lung adenocarcinoma RNA-seq" --max-results 3 --show-browser --send-emails
-  ```
-
-### Demo Environment Requirements
-
-```
-OPENAI_API_KEY -> enables -> BrowserUseLLM
-AGENTMAIL_API_KEY -> enables -> EmailAutomation  # only required if sending emails
-REQUESTER_NAME -> default -> "Researcher"         # optional; TUI will prompt
-REQUESTER_EMAIL -> default -> "researcher@example.com"
-REQUESTER_TITLE -> default -> "Researcher"
-COMPANY_NAME -> default -> "YourCompany"         # used for LinkedIn search prompt
-```
-
-- The TUI toggles `settings.DEBUG` to `True` when ShowBrowser is enabled so that scrapers run with headless=False.
-- If keys are missing, TUI warns and can proceed with those features disabled.
-
-### Demo-Specific Safety & Compliance
-
-```
-TUI -> detects -> PHIIndicators
-PHIIndicators -> include -> ["clinical", "patient", "phi"]
-PHIIndicators -> require -> ManualApproval
-EmailSend -> requires -> ExplicitUserConfirmation
-Outreach -> logs -> Provenance
-```
-
-- All sending is opt-in and requires explicit user confirmation in the TUI.
-- If sensitive hints are detected, the TUI enforces a manual approval gate.
-
-### Demo Troubleshooting
-
-```
-NoBrowserWindow -> verify -> settings.DEBUG(true) and --show-browser flag
-BrowserUseImportError -> verify -> browser-use installed (see backend/requirements.txt)
-OPENAI_API_KEYMissing -> set -> export OPENAI_API_KEY=...
-AGENTMAIL_API_KEYMissing -> set -> export AGENTMAIL_API_KEY=...  # if sending emails
-LinkedInBlocked -> try -> public search only or reduce steps (anti-bot protections)
-GEOBlocked/Timeout -> rerun -> with more time or smaller max_results
-```
-
-- The TUI will continue gracefully if LinkedIn search fails (anti-bot) or if GEO throttles; it will display results for whatever succeeded and still allow you to proceed or skip sending.
-
-### Demo KPIs (Observed)
-
-```
-LiveSearchTime -> typically -> under 2-5 minutes (depends on anti-bot and network)
-OutreachSelection -> reduces -> manual drafting time to seconds
-HumanApprovalGate -> ensures -> PHI compliance in live runs
-```

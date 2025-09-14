@@ -8,19 +8,17 @@ from typing import List, Dict, Any, Optional
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, ModelRetry
+from pydantic_ai.models.bedrock import BedrockConverseModel
 from app.core.utils.provenance import log_provenance
 from app.config import settings
 from app.core.scrapers.geo_scraper import GEOScraper
 
 # Browser-Use (Python) — MUST be used for scraping
-try:
-    from browser_use import Agent as BrowserAgent
-    from browser_use import Browser, BrowserProfile, ChatOpenAI
-except Exception:  # pragma: no cover - allow import-time resilience
-    BrowserAgent = None  # type: ignore[assignment]
-    Browser = None  # type: ignore[assignment]
-    BrowserProfile = None  # type: ignore[assignment]
-    ChatOpenAI = None  # type: ignore[assignment]
+
+from browser_use import Agent as BrowserAgent
+from browser_use import Browser, BrowserProfile
+from browser_use.llm import ChatAWSBedrock
+
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +44,10 @@ class DatasetCandidate(BaseModel):
     relevance_score: float = Field(default=0.0, ge=0, le=1)
 
 
+model = BedrockConverseModel( "us.anthropic.claude-sonnet-4-20250514-v1:0")
+
 bio_database_agent = Agent[DatabaseSearchParams, List[DatasetCandidate]](
-    "openai:gpt-4o",
+    model,
     deps_type=DatabaseSearchParams,
     output_type=List[DatasetCandidate],
     instructions=(
@@ -70,7 +70,7 @@ bio_database_agent = Agent[DatabaseSearchParams, List[DatasetCandidate]](
         - Add timepoint indicators: ("pre-treatment" OR "post-treatment" OR "longitudinal")
         - Specify data modalities: ("RNA-seq" OR "scRNA-seq" OR "proteomics")
         Example queries: 
-        - "P53 lung cancer RNA-seq" → ("TP53" OR "p53") AND ("lung cancer" OR "NSCLC") AND ("RNA-seq" OR "transcriptome")
+        - "P53 lung cancer RNA-seq" → ("TP53" OR "p53") AND ("lung cancer" OR "NSCLC") AND "RNA-seq"
         - "immunotherapy resistance" → ("PD-1" OR "PD-L1" OR "checkpoint inhibitor") AND ("resistance" OR "non-responder")
 
         Output Format:
@@ -311,7 +311,7 @@ async def search_with_advanced_strategy(ctx: RunContext[DatabaseSearchParams]) -
     This implements the professional search methodology from the template.
     """
     # Step 1: Get optimized query
-    optimized_query = ctx.query
+    optimized_query = ctx.deps.query
     
     # Step 2: Execute search with optimized query
     scraper = GEOScraper(headless=not bool(getattr(settings, "DEBUG", False)))

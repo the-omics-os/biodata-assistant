@@ -7,18 +7,15 @@ from typing import List, Dict, Any, Optional
 
 from pydantic import BaseModel, EmailStr, Field
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.models.bedrock import BedrockConverseModel
 from app.core.utils.provenance import log_provenance
 from app.config import settings
 
 # Browser-Use (Python) — MUST be used for LinkedIn search
-try:
-    from browser_use import Agent as BrowserAgent
-    from browser_use import Browser, BrowserProfile, ChatOpenAI
-except Exception:  # pragma: no cover
-    BrowserAgent = None  # type: ignore[assignment]
-    Browser = None  # type: ignore[assignment]
-    BrowserProfile = None  # type: ignore[assignment]
-    ChatOpenAI = None  # type: ignore[assignment]
+from browser_use import Agent as BrowserAgent
+from browser_use import Browser, BrowserProfile
+from browser_use.llm import ChatAWSBedrock
+
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +49,10 @@ class Contact(BaseModel):
 class Contacts(BaseModel):
     items: List[Contact]
 
+model = BedrockConverseModel( "us.anthropic.claude-sonnet-4-20250514-v1:0")
 
 colleagues_agent = Agent[ColleagueSearchParams, List[InternalContact]](
-    "openai:gpt-4o",
+    model,
     deps_type=ColleagueSearchParams,
     output_type=List[InternalContact],
     instructions=(
@@ -87,7 +85,7 @@ def _extract_json_list(text: str) -> List[Dict[str, Any]]:
 
 
 async def _run_browser_use_task(task: str) -> List[Dict[str, Any]]:
-    if BrowserAgent is None or Browser is None or ChatOpenAI is None:
+    if BrowserAgent is None or Browser is None or ChatAWSBedrock is None:
         logger.warning("browser_use not available; returning empty colleague results")
         return []
 
@@ -99,7 +97,12 @@ async def _run_browser_use_task(task: str) -> List[Dict[str, Any]]:
         timeout=600
     )
     browser = Browser(browser_profile=profile)
-    llm = ChatOpenAI(model="gpt-4.1-mini")
+    llm = ChatAWSBedrock(
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        aws_region="us-east-1",
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+    )
 
     agent = BrowserAgent(
         task=task,
@@ -181,20 +184,133 @@ async def search_linkedin_employees(ctx: RunContext[ColleagueSearchParams]) -> L
     return results
 
 
-async def search_linkedin_direct(company: str, departments: List[str], keywords: List[str], max_results: int = 10) -> List[Dict[str, Any]]:
+async def linkedin_sign_in() -> Dict[str, Any]:
     """
-    Deterministic LinkedIn search that bypasses the LLM agent and returns structured JSON.
-    Avoids any hardcoded keywords/heuristics and simply normalizes scraper output.
+    Ensure the LinkedIn session is signed in before running internal searches.
+    Returns:
+        {"ok": bool, "status": one of "success" | "missing_credentials" | "checkpoint_required" | "invalid_credentials" | "error" | "unavailable"}
+    """
+    from app.core.scrapers.linkedin_scraper import LinkedInScraper
+
+    # Validate minimal config
+    if not (settings.LINKEDIN_EMAIL and settings.LINKEDIN_PW and settings.LINKEDIN_COMPANY_URL):
+        status = "missing_credentials"
+        await log_provenance(
+            actor="colleagues_agent",
+            action="linkedin_sign_in",
+            details={"ok": False, "status": status},
+        )
+        return {"ok": False, "status": status}
+
+    scraper = LinkedInScraper(headless=not bool(getattr(settings, "DEBUG", False)))
+    ok, status = await scraper.ensure_logged_in()
+
+    await log_provenance(
+        actor="colleagues_agent",
+        action="linkedin_sign_in",
+        details={"ok": ok, "status": status},
+    )
+    return {"ok": ok, "status": status}
+
+
+async def start_linkedin_login_session() -> Dict[str, Any]:
+    """
+    Open a persistent LinkedIn login session and keep the browser open so the user can log in manually.
+    Returns:
+        {"ok": bool, "status": "opened"|"unavailable"|"error", "error": Optional[str]}
+    Notes:
+        - Does NOT submit credentials; only opens the login page and keeps the browser alive.
+        - Session persistence relies on LinkedInScraper keep_alive BrowserProfile and user_data_dir.
     """
     from app.core.scrapers.linkedin_scraper import LinkedInScraper
 
     scraper = LinkedInScraper(headless=not bool(getattr(settings, "DEBUG", False)))
-    raw = await scraper.find_company_employees(
-        company=company,
-        departments=departments,
-        keywords=keywords or [],
-        max_results=max_results,
+    res = await scraper.open_login_page(keep_open=True)
+
+    await log_provenance(
+        actor="colleagues_agent",
+        action="linkedin_manual_login_started",
+        details={"ok": bool(res.get("ok")), "status": res.get("status")},
     )
+    return res
+
+
+async def search_linkedin_direct(
+    company: str,
+    departments: List[str],
+    keywords: List[str],
+    max_results: int = 10,
+    login_preferred: bool = True,
+    use_existing_session: bool = False,
+) -> List[Dict[str, Any]]:
+    """
+    Deterministic LinkedIn search that can attempt a sign-in-first workflow and returns structured JSON.
+    - If login_preferred and credentials exist, try a logged-in, non-action contact scrape.
+    - Otherwise fall back to public search without login.
+    """
+    from app.core.scrapers.linkedin_scraper import LinkedInScraper
+
+    scraper = LinkedInScraper(headless=not bool(getattr(settings, "DEBUG", False)))
+
+    raw: List[Dict[str, Any]] = []
+    login_status = "skipped"
+
+    # 1) Prefer manual, already-open session if requested
+    if use_existing_session:
+        try:
+            raw = await scraper.get_logged_in_contacts(
+                company=company,
+                departments=departments,
+                keywords=keywords or [],
+                max_results=max_results,
+                skip_login_check=True,
+            )
+            login_status = "manual_session"
+        except Exception:
+            raw = []
+            login_status = "manual_session_error"
+
+    # 2) If no manual session results, optionally attempt agentic sign-in if enabled (backward-compat)
+    if not raw:
+        if login_preferred and settings.LINKEDIN_EMAIL and settings.LINKEDIN_PW and settings.LINKEDIN_COMPANY_URL:
+            try:
+                ok, status = await scraper.ensure_logged_in()
+                login_status = status
+                if ok:
+                    raw = await scraper.get_logged_in_contacts(
+                        company=company,
+                        departments=departments,
+                        keywords=keywords or [],
+                        max_results=max_results,
+                    )
+                else:
+                    # Fallback to public search
+                    raw = await scraper.find_company_employees(
+                        company=company,
+                        departments=departments,
+                        keywords=keywords or [],
+                        max_results=max_results,
+                        login=False,
+                    )
+            except Exception:
+                # Hard fallback to public search
+                raw = await scraper.find_company_employees(
+                    company=company,
+                    departments=departments,
+                    keywords=keywords or [],
+                    max_results=max_results,
+                    login=False,
+                )
+        else:
+            # 3) Public search without login
+            raw = await scraper.find_company_employees(
+                company=company,
+                departments=departments,
+                keywords=keywords or [],
+                max_results=max_results,
+                login=False,
+            )
+
     results: List[Dict[str, Any]] = []
     for r in raw or []:
         results.append(
@@ -210,10 +326,11 @@ async def search_linkedin_direct(company: str, departments: List[str], keywords:
                 "reason_for_contact": "Matches provided keywords/departments",
             }
         )
+
     await log_provenance(
         actor="colleagues_agent",
         action="searched_linkedin_direct",
-        details={"company": company, "found_count": len(results)},
+        details={"company": company, "found_count": len(results), "login_preferred": login_preferred, "login_status": login_status},
     )
     return results
 

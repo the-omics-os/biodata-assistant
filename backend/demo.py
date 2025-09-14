@@ -41,6 +41,9 @@ from rich.prompt import Prompt, Confirm, IntPrompt
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich import print as rprint
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # Backend imports
 from app.config import settings
 from app.models.schemas import SearchRequest
@@ -198,6 +201,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Allow sending emails after confirmation (still requires in-TUI confirmation)",
     )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Run non-interactively using default values for all prompts",
+    )
     return parser.parse_args()
 
 
@@ -261,9 +269,22 @@ async def run_geo(query: str, max_results: int) -> List[Dict[str, Any]]:
     return results
 
 
-async def run_linkedin(company: str, departments: List[str], keywords: List[str]) -> List[Dict[str, Any]]:
+async def run_linkedin(
+    company: str,
+    departments: List[str],
+    keywords: List[str],
+    login_preferred: bool = True,
+    use_existing_session: bool = False,
+) -> List[Dict[str, Any]]:
     from app.core.agents.colleagues_agent import search_linkedin_direct
-    out = await search_linkedin_direct(company=company, departments=departments, keywords=keywords, max_results=10)
+    out = await search_linkedin_direct(
+        company=company,
+        departments=departments,
+        keywords=keywords,
+        max_results=10,
+        login_preferred=login_preferred,
+        use_existing_session=use_existing_session,
+    )
     contacts: List[Dict[str, Any]] = []
     for item in out or []:
         contacts.append(item.model_dump() if hasattr(item, "model_dump") else dict(item))
@@ -420,13 +441,15 @@ async def main() -> None:
 
     # Interactive inputs
     default_suggestions = [
-        "I'm looking for a dataset from human single-cell transcriptome in breast or lung cancer. I'm curious about the behavior of P53 mutations.",
+        "I'm looking for a dataset from human scRNA-seq in breast or lung cancer. I'm curious about the behavior of P53 mutations.",
         "Triple negative breast cancer proteomics and transcriptomics datasets",
         "P53 pathway proteomics in breast cancer cohorts",
     ]
 
     if args.query:
         query = args.query
+    elif args.demo:
+        query = default_suggestions[0]
     else:
         console.print("[bold]Enter your research question[/bold]")
         console.print("Suggestions:")
@@ -441,10 +464,21 @@ async def main() -> None:
     if args.max_results is not None:
         max_results = max(1, int(args.max_results))
     else:
-        max_results = max(1, IntPrompt.ask("Max results to fetch from GEO", default=1))
+        if args.demo:
+            max_results = 1
+        else:
+            max_results = max(1, IntPrompt.ask("Max results to fetch from GEO", default=1))
 
     # Refine research requirements
-    reqs = prompt_research_requirements()
+    if args.demo:
+        reqs = {
+            "modalities": [],
+            "cancer_types": [],
+            "organism": "Homo sapiens",
+            "min_samples": None,
+        }
+    else:
+        reqs = prompt_research_requirements()
     refined_tokens: List[str] = []
     if reqs.get("organism"):
         refined_tokens.append(reqs["organism"])
@@ -457,12 +491,16 @@ async def main() -> None:
     # Show browsers (headless=False) toggle
     if args.show_browser:
         show_browser = True
+    elif args.demo:
+        show_browser = True
     else:
         show_browser = Confirm.ask("Show live browsers for scraping? (recommended for dev)", default=True)
 
     # Control LinkedIn colleague search
     if args.include_internal:
         include_internal = True
+    elif args.demo:
+        include_internal = False
     else:
         include_internal = Confirm.ask("Also search for internal colleagues via LinkedIn?", default=False)
 
@@ -477,25 +515,60 @@ async def main() -> None:
     ok_env, issues = validate_env(send_emails=allow_send_flag)
     if not ok_env:
         console.print(Panel.fit("\n".join(issues), title="Environment Validation", border_style="red"))
-        if not Confirm.ask("Continue anyway (scraping may fail or emailing disabled)?", default=False):
-            sys.exit(1)
+        if args.demo:
+            console.print("[yellow]Continuing in demo mode despite environment issues.[/yellow]")
+        else:
+            if not Confirm.ask("Continue anyway (scraping may fail or emailing disabled)?", default=False):
+                sys.exit(1)
 
     # Requester identity
     console.print("\n[bold]Requester identity (used in outreach emails):[/bold]")
-    requester_name = Prompt.ask("Your name", default=os.getenv("REQUESTER_NAME", "Researcher"))
-    requester_email = Prompt.ask("Your email", default=os.getenv("REQUESTER_EMAIL", "researcher@example.com"))
-    requester_title = Prompt.ask("Your title", default=os.getenv("REQUESTER_TITLE", "Researcher"))
+    if args.demo:
+        requester_name = os.getenv("REQUESTER_NAME", "Researcher")
+        requester_email = os.getenv("REQUESTER_EMAIL", "researcher@example.com")
+        requester_title = os.getenv("REQUESTER_TITLE", "Researcher")
+    else:
+        requester_name = Prompt.ask("Your name", default=os.getenv("REQUESTER_NAME", "Researcher"))
+        requester_email = Prompt.ask("Your email", default=os.getenv("REQUESTER_EMAIL", "researcher@example.com"))
+        requester_title = Prompt.ask("Your title", default=os.getenv("REQUESTER_TITLE", "Researcher"))
 
     # Company for LinkedIn search (when enabled)
     company = ""
     departments: List[str] = []
     li_keywords: List[str] = []
     if include_internal:
-        company = Prompt.ask("Company to search on LinkedIn (public search)", default=os.getenv("COMPANY_NAME", "Omics-OS"))
-        departments_str = Prompt.ask("Departments to include (comma-separated)", default="Bioinformatics,Genomics,Oncology,Data Science")
-        departments = [d.strip() for d in departments_str.split(",") if d.strip()]
-        keywords_str = Prompt.ask("Role keywords (comma-separated)", default="cancer,genomics,data")
-        li_keywords = [k.strip() for k in keywords_str.split(",") if k.strip()]
+        if args.demo:
+            company = os.getenv("COMPANY_NAME", "Omics-OS")
+            departments_str = "Bioinformatics,Genomics,Oncology,Data Science"
+            departments = [d.strip() for d in departments_str.split(",") if d.strip()]
+            keywords_str = "cancer,genomics,data"
+            li_keywords = [k.strip() for k in keywords_str.split(",") if k.strip()]
+        else:
+            company = Prompt.ask("Company to search on LinkedIn (public search)", default=os.getenv("COMPANY_NAME", "Omics-OS"))
+            departments_str = Prompt.ask("Departments to include (comma-separated)", default="Bioinformatics,Genomics,Oncology,Data Science")
+            departments = [d.strip() for d in departments_str.split(",") if d.strip()]
+            keywords_str = Prompt.ask("Role keywords (comma-separated)", default="cancer,genomics,data")
+            li_keywords = [k.strip() for k in keywords_str.split(",") if k.strip()]
+
+    # LinkedIn manual login flow (open login page and let the user authenticate)
+    login_preferred = False  # disable agentic login attempts
+    use_existing_session = False
+    if include_internal and not args.demo:
+        try:
+            from app.core.agents.colleagues_agent import start_linkedin_login_session
+            console.print("[dim]Opening LinkedIn login page in a persistent browser...[/dim]")
+            opened = await start_linkedin_login_session()
+            if bool(opened.get("ok")):
+                console.print("[bold]A browser window/tab should now show the LinkedIn login page.[/bold]")
+                console.print("Please log in manually in the browser. Leave the browser open.")
+                _ = Prompt.ask("Press Enter here once you have completed login (and can see your LinkedIn feed).", default="")
+                use_existing_session = True
+            else:
+                console.print(f"[yellow]Could not open LinkedIn login page ({opened.get('status')}). Proceeding with public search.[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]Manual login session failed to start: {e}. Proceeding with public search.[/yellow]")
+    elif include_internal and args.demo:
+        console.print("[dim]Demo mode: skipping manual LinkedIn login. Using public search.[/dim]")
 
     # Build search request
     search_req = SearchRequest(
@@ -584,9 +657,15 @@ async def main() -> None:
 
         contacts: List[Dict[str, Any]] = []
         if include_internal:
-            tk = progress.add_task("[cyan]Searching LinkedIn (live browser)...", total=None)
+            tk = progress.add_task("[cyan]Searching LinkedIn (live browser)...\n", total=None)
             try:
-                contacts = await run_linkedin(company, departments=departments, keywords=li_keywords or ["cancer", "genomics", "data"])
+                contacts = await run_linkedin(
+                    company,
+                    departments=departments,
+                    keywords=li_keywords or ["cancer", "genomics", "data"],
+                    login_preferred=login_preferred,
+                    use_existing_session=use_existing_session,
+                )
                 progress.update(tk, description=f"[green]✓ Contacts found: {len(contacts)}", completed=True)
                 try:
                     ct_rows = [
@@ -613,7 +692,10 @@ async def main() -> None:
     render_contacts(contacts)
 
     # Outreach selection
-    chosen = select_datasets_for_outreach(datasets)
+    if args.demo:
+        chosen = []
+    else:
+        chosen = select_datasets_for_outreach(datasets)
     outreach_results: List[Dict[str, Any]] = []
 
     if chosen:

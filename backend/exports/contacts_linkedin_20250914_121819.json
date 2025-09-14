@@ -1,0 +1,53 @@
+[
+  {
+    "name": "Alice Johnson",
+    "job_title": "Senior Data Scientist",
+    "department": "Data",
+    "company": "Omics-OS",
+    "linkedin_url": null,
+    "email": null,
+    "email_suggestions": [
+      "alice.johnson@omicsos.com",
+      "ajohnson@omicsos.com",
+      "alice@omicsos.com",
+      "johnson@omicsos.com",
+      "alice_johnson@omicsos.com"
+    ],
+    "relevance_score": 0.4,
+    "reason_for_contact": "Matches provided keywords/departments"
+  },
+  {
+    "name": "Bob Lee",
+    "job_title": "Research Scientist",
+    "department": "Research",
+    "company": "Omics-OS",
+    "linkedin_url": null,
+    "email": null,
+    "email_suggestions": [
+      "bob.lee@omicsos.com",
+      "blee@omicsos.com",
+      "bob@omicsos.com",
+      "lee@omicsos.com",
+      "bob_lee@omicsos.com"
+    ],
+    "relevance_score": 0.2,
+    "reason_for_contact": "Matches provided keywords/departments"
+  },
+  {
+    "name": "Carol Perez",
+    "job_title": "Lab Manager",
+    "department": "Laboratory",
+    "company": "Omics-OS",
+    "linkedin_url": null,
+    "email": null,
+    "email_suggestions": [
+      "carol.perez@omicsos.com",
+      "cperez@omicsos.com",
+      "carol@omicsos.com",
+      "perez@omicsos.com",
+      "carol_perez@omicsos.com"
+    ],
+    "relevance_score": 0.0,
+    "reason_for_contact": "Matches provided keywords/departments"
+  }
+]

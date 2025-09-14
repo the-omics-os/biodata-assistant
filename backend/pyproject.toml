@@ -9,10 +9,11 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "browser-use>=0.7.7",
+    "browser-use==0.5.0",
     "celery>=5.5.3",
     "fastapi>=0.116.1",
     "pydantic-ai>=1.0.6",
+    "pydantic-ai-slim[bedrock]>=1.0.6",
     "pydantic[email]>=2.11.9",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",

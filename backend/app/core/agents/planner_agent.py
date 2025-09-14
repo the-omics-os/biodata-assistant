@@ -7,6 +7,7 @@ from pydantic_ai import Agent, RunContext
 from app.models.schemas import SearchRequest
 from app.core.utils.provenance import log_provenance
 from dotenv import load_dotenv
+from pydantic_ai.models.bedrock import BedrockConverseModel
 load_dotenv()
 
 
@@ -25,9 +26,10 @@ class WorkflowPlan(BaseModel):
     estimated_duration_minutes: int
     requires_approval: bool = False
 
+model = BedrockConverseModel( "us.anthropic.claude-sonnet-4-20250514-v1:0")
 
 planner_agent = Agent[SearchRequest, WorkflowPlan](
-    "openai:gpt-4o",
+    model,
     deps_type=SearchRequest,
     output_type=WorkflowPlan,
     instructions=(

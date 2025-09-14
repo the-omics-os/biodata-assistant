@@ -13,14 +13,11 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 # Optional Browser-Use imports with fallbacks
-try:
-    from browser_use import Agent as BrowserAgent
-    from browser_use import Browser, BrowserProfile, ChatOpenAI
-except Exception:  # pragma: no cover - allow import-time resilience
-    BrowserAgent = None  # type: ignore[assignment]
-    Browser = None  # type: ignore[assignment]
-    BrowserProfile = None  # type: ignore[assignment]
-    ChatOpenAI = None  # type: ignore[assignment]
+
+from browser_use import Agent as BrowserAgent
+from browser_use import Browser, BrowserProfile
+from browser_use.llm import ChatAWSBedrock
+
 
 
 class GEODataset(BaseModel):
@@ -104,9 +101,9 @@ Speed optimization instructions:
         Returns a list of dicts (ready to be normalized by agents if needed).
         """
         # If Browser-Use is not available, return mock results for MVP/demo
-        if BrowserAgent is None or self.browser is None or ChatOpenAI is None:
+        if BrowserAgent is None or self.browser is None or ChatAWSBedrock is None:
             logger.warning("browser_use not available; returning mock GEO results")
-            results = self._mock_results(query, max_results)
+            results = []
             await self._log_provenance(
                 action="searched_geo_mock",
                 details={"query": query, "results_found": len(results)},
@@ -137,8 +134,13 @@ You are a world class bioinformatician. You think and navigate the tools like on
 4. Return strictly as a JSON object with key 'items' containing an array of the extracted objects
 """
 
-            # Fast LLM as per docs
-            llm = ChatOpenAI(model="gpt-4.1-mini")
+            # Bedrock Anthropic Claude Sonnet 4 (configured via env)
+            llm = ChatAWSBedrock(
+                model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+                aws_region="us-east-1",
+                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            )
 
             agent = BrowserAgent(
                 task=search_task,
@@ -207,7 +209,7 @@ Return strictly as a JSON object with keys: contact_name, contact_email, downloa
 """
         try:
             # Prefer a dedicated agent with structured output for enrichment
-            if BrowserAgent is not None and ChatOpenAI is not None and self.browser is not None:
+            if BrowserAgent is not None and ChatAWSBedrock is not None and self.browser is not None:
                 from pydantic import BaseModel as _BM  # alias to avoid shadowing
 
                 class GEOEnrichment(_BM):
@@ -217,7 +219,12 @@ Return strictly as a JSON object with keys: contact_name, contact_email, downloa
                     pubmed_id: Optional[str] = None
                     publication_url: Optional[str] = None
 
-                llm = ChatOpenAI(model="gpt-4.1-mini")
+                llm = ChatAWSBedrock(
+                    model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+                    aws_region="us-east-1",
+                    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+                )
                 enrich_agent = BrowserAgent(
                     task=detail_task,
                     browser=self.browser,
