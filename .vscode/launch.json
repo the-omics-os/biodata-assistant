@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: biodata assistant",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/backend/demo.py",
+            "console": "integratedTerminal",
+            "python": "${workspaceFolder}/backend/.venv/bin/python",
+            "env": {
+                "PYDEVD_WARN_EVALUATION_TIMEOUT": "500"
+            },
+            "args": [
+                "--include-internal",
+                "--show-browser",
+                "--send-emails"
+            ]
+        }
+    ]
+}

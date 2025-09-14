@@ -30,165 +30,264 @@ Cancer researchers (bioinformaticians, data scientists, ML engineers) need to:
 ## Knowledge Graph - System Relationships
 
 ### Backend Infrastructure Relationships
-```
-# API Layer
-FastAPI -> hosts -> APIRouter
-APIRouter -> contains -> SearchEndpoint
-APIRouter -> contains -> DatasetEndpoint
-APIRouter -> contains -> OutreachEndpoint
-APIRouter -> contains -> TaskEndpoint
-APIRouter -> contains -> WebhookEndpoint
 
-SearchEndpoint -> triggers -> AgentOrchestrator
-DatasetEndpoint -> manages -> DatasetCRUD
-OutreachEndpoint -> manages -> OutreachRequests
-TaskEndpoint -> tracks -> BackgroundTasks
-WebhookEndpoint -> receives -> EmailReplies
+```mermaid
+flowchart TD
+    %% API Layer
+    FastAPI[FastAPI Server] --> APIRouter[API Router]
+    APIRouter --> SearchEndpoint[Search Endpoint]
+    APIRouter --> DatasetEndpoint[Dataset Endpoint]
+    APIRouter --> OutreachEndpoint[Outreach Endpoint]
+    APIRouter --> TaskEndpoint[Task Endpoint]
+    APIRouter --> WebhookEndpoint[Webhook Endpoint]
 
-# Database Layer
-SQLAlchemy -> manages -> DatabaseModels
-DatabaseModels -> includes -> UserModel
-DatabaseModels -> includes -> DatasetModel
-DatabaseModels -> includes -> OutreachRequestModel
-DatabaseModels -> includes -> ProvenanceModel
-DatabaseModels -> includes -> TaskModel
+    %% Endpoint Functions
+    SearchEndpoint --> AgentOrchestrator[Agent Orchestrator]
+    DatasetEndpoint --> DatasetCRUD[Dataset CRUD]
+    OutreachEndpoint --> OutreachRequests[Outreach Requests]
+    TaskEndpoint --> BackgroundTasks[Background Tasks]
+    WebhookEndpoint --> EmailReplies[Email Replies]
 
-UserModel -> represents -> ResearcherProfile
-DatasetModel -> stores -> BiologicalDatasets
-OutreachRequestModel -> tracks -> EmailOutreach
-ProvenanceModel -> logs -> AuditTrail
-TaskModel -> monitors -> AsyncOperations
+    %% Database Layer
+    SQLAlchemy[SQLAlchemy ORM] --> DatabaseModels[Database Models]
+    DatabaseModels --> UserModel[User Model]
+    DatabaseModels --> DatasetModel[Dataset Model]
+    DatabaseModels --> OutreachRequestModel[Outreach Request Model]
+    DatabaseModels --> ProvenanceModel[Provenance Model]
+    DatabaseModels --> TaskModel[Task Model]
 
-# Configuration Layer
-Config -> provides -> EnvironmentVariables
-Config -> manages -> APIKeys
-Config -> defines -> DatabaseURL
-Config -> sets -> CORSOrigins
+    %% Model Purposes
+    UserModel --> ResearcherProfile[Researcher Profile]
+    DatasetModel --> BiologicalDatasets[Biological Datasets]
+    OutreachRequestModel --> EmailOutreach[Email Outreach]
+    ProvenanceModel --> AuditTrail[Audit Trail]
+    TaskModel --> AsyncOperations[Async Operations]
+
+    %% Configuration Layer
+    Config[Configuration] --> EnvironmentVariables[Environment Variables]
+    Config --> APIKeys[API Keys]
+    Config --> DatabaseURL[Database URL]
+    Config --> CORSOrigins[CORS Origins]
+
+    %% Styling
+    classDef apiLayer fill:#e1f5fe
+    classDef dbLayer fill:#f3e5f5
+    classDef configLayer fill:#e8f5e8
+
+    class FastAPI,APIRouter,SearchEndpoint,DatasetEndpoint,OutreachEndpoint,TaskEndpoint,WebhookEndpoint apiLayer
+    class SQLAlchemy,DatabaseModels,UserModel,DatasetModel,OutreachRequestModel,ProvenanceModel,TaskModel dbLayer
+    class Config,EnvironmentVariables,APIKeys,DatabaseURL,CORSOrigins configLayer
 ```
 
 ### Agent System Relationships
-```
-# Agent Hierarchy
-AgentOrchestrator -> coordinates -> PlannerAgent
-AgentOrchestrator -> coordinates -> BioDatabaseAgent
-AgentOrchestrator -> coordinates -> ColleaguesAgent
-AgentOrchestrator -> coordinates -> EmailAgent
-AgentOrchestrator -> coordinates -> SummarizerAgent
 
-# Planner Agent
-PlannerAgent -> analyzes -> ResearchQuery
-PlannerAgent -> identifies -> DataModalities
-PlannerAgent -> creates -> WorkflowPlan
-PlannerAgent -> detects -> CancerKeywords
-ResearchQuery -> contains -> P53Mutations
-ResearchQuery -> contains -> LungAdenocarcinoma
-ResearchQuery -> contains -> TNBC
+```mermaid
+flowchart TD
+    %% Agent Hierarchy
+    AgentOrchestrator[Agent Orchestrator] --> PlannerAgent[Planner Agent]
+    AgentOrchestrator --> BioDatabaseAgent[Bio-Database Agent]
+    AgentOrchestrator --> ColleaguesAgent[Colleagues Agent]
+    AgentOrchestrator --> EmailAgent[Email Agent]
+    AgentOrchestrator --> SummarizerAgent[Summarizer Agent]
 
-# Bio-Database Agent
-BioDatabaseAgent -> uses -> BrowserUse
-BioDatabaseAgent -> searches -> NCBIGEO
-BioDatabaseAgent -> searches -> PRIDE
-BioDatabaseAgent -> searches -> Ensembl
-BioDatabaseAgent -> extracts -> DatasetMetadata
-BioDatabaseAgent -> evaluates -> DatasetRelevance
-NCBIGEO -> provides -> GeneExpressionData
-PRIDE -> provides -> ProteomicsData
-Ensembl -> provides -> GenomicsData
+    %% Planner Agent Flow
+    PlannerAgent --> ResearchQuery[Research Query]
+    PlannerAgent --> DataModalities[Data Modalities]
+    PlannerAgent --> WorkflowPlan[Workflow Plan]
+    PlannerAgent --> CancerKeywords[Cancer Keywords]
+    ResearchQuery --> P53Mutations[P53 Mutations]
+    ResearchQuery --> LungAdenocarcinoma[Lung Adenocarcinoma]
+    ResearchQuery --> TNBC[Triple-Negative Breast Cancer]
 
-# Colleagues Agent  
-ColleaguesAgent -> uses -> BrowserUse
-ColleaguesAgent -> searches -> LinkedIn
-ColleaguesAgent -> finds -> InternalExperts
-ColleaguesAgent -> generates -> EmailSuggestions
-InternalExperts -> worksIn -> Bioinformatics
-InternalExperts -> worksIn -> Genomics
-InternalExperts -> worksIn -> Oncology
+    %% Bio-Database Agent Flow
+    BioDatabaseAgent --> BrowserUse1[Browser-Use Framework]
+    BioDatabaseAgent --> NCBIGEO[NCBI/GEO Database]
+    BioDatabaseAgent --> PRIDE[PRIDE Database]
+    BioDatabaseAgent --> Ensembl[Ensembl Database]
+    BioDatabaseAgent --> DatasetMetadata[Dataset Metadata]
+    BioDatabaseAgent --> DatasetRelevance[Dataset Relevance]
+    NCBIGEO --> GeneExpressionData[Gene Expression Data]
+    PRIDE --> ProteomicsData[Proteomics Data]
+    Ensembl --> GenomicsData[Genomics Data]
 
-# Email Agent
-EmailAgent -> uses -> AgentMailSDK
-EmailAgent -> composes -> ProfessionalEmails
-EmailAgent -> sends -> OutreachRequests
-EmailAgent -> checks -> ApprovalRequirements
-EmailAgent -> flags -> PHIContent
-OutreachRequests -> requestsAccess -> RestrictedDatasets
-PHIContent -> requires -> HumanApproval
+    %% Colleagues Agent Flow
+    ColleaguesAgent --> BrowserUse2[Browser-Use Framework]
+    ColleaguesAgent --> LinkedIn[LinkedIn Search]
+    ColleaguesAgent --> InternalExperts[Internal Experts]
+    ColleaguesAgent --> EmailSuggestions[Email Suggestions]
+    InternalExperts --> Bioinformatics[Bioinformatics Experts]
+    InternalExperts --> Genomics[Genomics Experts]
+    InternalExperts --> Oncology[Oncology Experts]
 
-# Summarizer Agent
-SummarizerAgent -> consolidates -> SearchResults
-SummarizerAgent -> analyzes -> DatasetQuality
-SummarizerAgent -> generates -> ExecutiveSummary
-SummarizerAgent -> prepares -> ExportData
-ExecutiveSummary -> includes -> Recommendations
-ExportData -> formats -> CSV
-ExportData -> formats -> Excel
+    %% Email Agent Flow
+    EmailAgent --> AgentMailSDK[AgentMail SDK]
+    EmailAgent --> ProfessionalEmails[Professional Emails]
+    EmailAgent --> OutreachRequests[Outreach Requests]
+    EmailAgent --> ApprovalRequirements[Approval Requirements]
+    EmailAgent --> PHIContent[PHI Content Detection]
+    OutreachRequests --> RestrictedDatasets[Restricted Datasets]
+    PHIContent --> HumanApproval[Human Approval Required]
+
+    %% Summarizer Agent Flow
+    SummarizerAgent --> SearchResults[Search Results]
+    SummarizerAgent --> DatasetQuality[Dataset Quality Analysis]
+    SummarizerAgent --> ExecutiveSummary[Executive Summary]
+    SummarizerAgent --> ExportData[Export Data]
+    ExecutiveSummary --> Recommendations[Recommendations]
+    ExportData --> CSV[CSV Format]
+    ExportData --> Excel[Excel Format]
+
+    %% Styling
+    classDef orchestrator fill:#ff9999
+    classDef agent fill:#99ccff
+    classDef data fill:#99ff99
+    classDef service fill:#ffcc99
+    classDef output fill:#cc99ff
+
+    class AgentOrchestrator orchestrator
+    class PlannerAgent,BioDatabaseAgent,ColleaguesAgent,EmailAgent,SummarizerAgent agent
+    class ResearchQuery,DataModalities,WorkflowPlan,DatasetMetadata,SearchResults,ExecutiveSummary data
+    class BrowserUse1,BrowserUse2,AgentMailSDK,LinkedIn,NCBIGEO,PRIDE,Ensembl service
+    class CSV,Excel,Recommendations,ExportData output
 ```
 
 ### External Integration Relationships
-```
-# Browser-Use Integration
-GEOScraper -> implements -> BrowserUseAgent
-GEOScraper -> navigates -> NCBIWebsite
-GEOScraper -> extracts -> DatasetAccession
-GEOScraper -> extracts -> SampleSize
-GEOScraper -> extracts -> ContactInfo
-LinkedInScraper -> implements -> BrowserUseAgent
-LinkedInScraper -> searches -> CompanyEmployees
-LinkedInScraper -> extracts -> JobTitles
-LinkedInScraper -> calculates -> RelevanceScore
 
-# AgentMail Integration
-AgentMailClient -> wraps -> AsyncAgentMail
-AgentMailClient -> sends -> EmailMessages
-AgentMailClient -> handles -> DeliveryStatus
-AgentMailClient -> processes -> EmailReplies
-WebhookReceiver -> verifies -> Signatures
-WebhookReceiver -> updates -> OutreachStatus
-WebhookReceiver -> logs -> Provenance
+```mermaid
+flowchart TD
+    %% Browser-Use Integration
+    subgraph "Browser-Use Integration"
+        GEOScraper[GEO Scraper] --> BrowserUseAgent1[Browser-Use Agent]
+        GEOScraper --> NCBIWebsite[NCBI Website Navigation]
+        GEOScraper --> DatasetAccession[Dataset Accession Extract]
+        GEOScraper --> SampleSize[Sample Size Extract]
+        GEOScraper --> ContactInfo[Contact Info Extract]
 
-# Database Relationships
-Dataset -> hasAccessType -> Public
-Dataset -> hasAccessType -> Request
-Dataset -> hasAccessType -> Restricted
-Dataset -> hasModality -> Transcriptomics
-Dataset -> hasModality -> Proteomics
-Dataset -> hasModality -> Genomics
-OutreachRequest -> hasStatus -> Pending
-OutreachRequest -> hasStatus -> Sent
-OutreachRequest -> hasStatus -> Replied
+        LinkedInScraper[LinkedIn Scraper] --> BrowserUseAgent2[Browser-Use Agent]
+        LinkedInScraper --> CompanyEmployees[Company Employees Search]
+        LinkedInScraper --> JobTitles[Job Titles Extract]
+        LinkedInScraper --> RelevanceScore[Relevance Score Calculation]
+    end
+
+    %% AgentMail Integration
+    subgraph "AgentMail Integration"
+        AgentMailClient[AgentMail Client] --> AsyncAgentMail[Async AgentMail Wrapper]
+        AgentMailClient --> EmailMessages[Email Message Sending]
+        AgentMailClient --> DeliveryStatus[Delivery Status Handling]
+        AgentMailClient --> EmailReplies[Email Reply Processing]
+
+        WebhookReceiver[Webhook Receiver] --> Signatures[Signature Verification]
+        WebhookReceiver --> OutreachStatus[Outreach Status Updates]
+        WebhookReceiver --> Provenance[Provenance Logging]
+    end
+
+    %% Database Relationships
+    subgraph "Database Relationships"
+        Dataset[Dataset Entity] --> AccessTypes[Access Types]
+        AccessTypes --> Public[Public Access]
+        AccessTypes --> Request[Request Required]
+        AccessTypes --> Restricted[Restricted Access]
+
+        Dataset --> DataModalities[Data Modalities]
+        DataModalities --> Transcriptomics[Transcriptomics Data]
+        DataModalities --> Proteomics[Proteomics Data]
+        DataModalities --> Genomics[Genomics Data]
+
+        OutreachRequest[Outreach Request Entity] --> RequestStatus[Request Status]
+        RequestStatus --> Pending[Pending Status]
+        RequestStatus --> Sent[Sent Status]
+        RequestStatus --> Replied[Replied Status]
+    end
+
+    %% Cross-Integration Connections
+    EmailMessages --> OutreachRequest
+    EmailReplies --> RequestStatus
+    DatasetAccession --> Dataset
+    ContactInfo --> EmailMessages
+
+    %% Styling
+    classDef scraper fill:#ffeb3b
+    classDef email fill:#4caf50
+    classDef database fill:#2196f3
+    classDef status fill:#ff9800
+
+    class GEOScraper,LinkedInScraper,BrowserUseAgent1,BrowserUseAgent2 scraper
+    class AgentMailClient,WebhookReceiver,EmailMessages,EmailReplies email
+    class Dataset,OutreachRequest,AccessTypes,DataModalities database
+    class Pending,Sent,Replied,Public,Request,Restricted status
 ```
 
 ### Workflow Relationships
-```
-# Main Workflow
-UserQuery -> triggers -> WorkflowExecution
-WorkflowExecution -> step1 -> UnderstandQuery
-WorkflowExecution -> step2 -> SearchDatabases
-WorkflowExecution -> step3 -> FindColleagues
-WorkflowExecution -> step4 -> EvaluateResults
-WorkflowExecution -> step5 -> SendOutreach
-WorkflowExecution -> step6 -> GenerateSummary
 
-# Step Details
-UnderstandQuery -> uses -> PlannerAgent
-UnderstandQuery -> produces -> WorkflowPlan
-SearchDatabases -> parallelizes -> DatabaseSearches
-SearchDatabases -> uses -> BioDatabaseAgent
-FindColleagues -> uses -> ColleaguesAgent
-FindColleagues -> searches -> InternalNetwork
-EvaluateResults -> categorizes -> Datasets
-EvaluateResults -> prioritizes -> OutreachTargets
-SendOutreach -> uses -> EmailAgent
-SendOutreach -> respects -> ApprovalWorkflow
-GenerateSummary -> uses -> SummarizerAgent
-GenerateSummary -> creates -> FinalReport
+```mermaid
+flowchart TD
+    %% Main Workflow
+    UserQuery[User Query] --> WorkflowExecution[Workflow Execution]
 
-# Safety & Compliance
-SafetyChecker -> detects -> PHIIndicators
-SafetyChecker -> flags -> SensitiveData
-SafetyChecker -> requires -> ExecutiveApproval
-ProvenanceLogger -> tracks -> AllActions
-ProvenanceLogger -> maintains -> AuditTrail
-ProvenanceLogger -> ensures -> Compliance
+    WorkflowExecution --> UnderstandQuery[Step 1: Understand Query]
+    WorkflowExecution --> SearchDatabases[Step 2: Search Databases]
+    WorkflowExecution --> FindColleagues[Step 3: Find Colleagues]
+    WorkflowExecution --> EvaluateResults[Step 4: Evaluate Results]
+    WorkflowExecution --> SendOutreach[Step 5: Send Outreach]
+    WorkflowExecution --> GenerateSummary[Step 6: Generate Summary]
+
+    %% Step Details
+    UnderstandQuery --> PlannerAgent[Planner Agent]
+    UnderstandQuery --> WorkflowPlan[Workflow Plan]
+
+    SearchDatabases --> DatabaseSearches[Parallel Database Searches]
+    SearchDatabases --> BioDatabaseAgent[Bio-Database Agent]
+
+    FindColleagues --> ColleaguesAgent[Colleagues Agent]
+    FindColleagues --> InternalNetwork[Internal Network Search]
+
+    EvaluateResults --> Datasets[Dataset Categorization]
+    EvaluateResults --> OutreachTargets[Outreach Target Prioritization]
+
+    SendOutreach --> EmailAgent[Email Agent]
+    SendOutreach --> ApprovalWorkflow[Approval Workflow]
+
+    GenerateSummary --> SummarizerAgent[Summarizer Agent]
+    GenerateSummary --> FinalReport[Final Report Creation]
+
+    %% Safety & Compliance
+    subgraph "Safety & Compliance Layer"
+        SafetyChecker[Safety Checker] --> PHIIndicators[PHI Indicators Detection]
+        SafetyChecker --> SensitiveData[Sensitive Data Flagging]
+        SafetyChecker --> ExecutiveApproval[Executive Approval Required]
+
+        ProvenanceLogger[Provenance Logger] --> AllActions[All Actions Tracking]
+        ProvenanceLogger --> AuditTrail[Audit Trail Maintenance]
+        ProvenanceLogger --> Compliance[Compliance Assurance]
+    end
+
+    %% Cross-connections for Safety
+    SendOutreach --> SafetyChecker
+    EmailAgent --> SafetyChecker
+    ApprovalWorkflow --> ExecutiveApproval
+
+    %% Provenance connections
+    WorkflowExecution --> ProvenanceLogger
+    SendOutreach --> ProvenanceLogger
+    EvaluateResults --> ProvenanceLogger
+
+    %% Sequential flow connections
+    UnderstandQuery --> SearchDatabases
+    SearchDatabases --> FindColleagues
+    FindColleagues --> EvaluateResults
+    EvaluateResults --> SendOutreach
+    SendOutreach --> GenerateSummary
+
+    %% Styling
+    classDef workflow fill:#e3f2fd
+    classDef agent fill:#f3e5f5
+    classDef safety fill:#ffebee
+    classDef output fill:#e8f5e8
+
+    class UserQuery,WorkflowExecution,UnderstandQuery,SearchDatabases,FindColleagues,EvaluateResults,SendOutreach,GenerateSummary workflow
+    class PlannerAgent,BioDatabaseAgent,ColleaguesAgent,EmailAgent,SummarizerAgent agent
+    class SafetyChecker,ProvenanceLogger,PHIIndicators,SensitiveData,ExecutiveApproval safety
+    class WorkflowPlan,FinalReport,DatabaseSearches,Datasets output
 ```
 
 ## Directory Structure
@@ -324,12 +423,23 @@ Frontend -> connects -> BackendAPI
 ## Success Metrics
 
 ### Key Performance Indicators
-```
-TimeReduction -> from -> 2-3Days
-TimeReduction -> to -> Minutes
-DatasetDiscovery -> increases -> 10x
-OutreachAutomation -> saves -> 95%Time
-ComplianceMaintained -> equals -> 100%
+
+```mermaid
+flowchart LR
+    TimeReduction[Time Reduction] --> Before[2-3 Days Before]
+    TimeReduction --> After[Minutes After]
+
+    DatasetDiscovery[Dataset Discovery] --> Increase[10x Increase]
+
+    OutreachAutomation[Outreach Automation] --> TimeSaved[95% Time Saved]
+
+    ComplianceMaintained[Compliance] --> Complete[100% Maintained]
+
+    classDef metric fill:#4caf50
+    classDef improvement fill:#2196f3
+
+    class TimeReduction,DatasetDiscovery,OutreachAutomation,ComplianceMaintained metric
+    class Before,After,Increase,TimeSaved,Complete improvement
 ```
 
 ## API Endpoints Summary
@@ -345,34 +455,76 @@ ComplianceMaintained -> equals -> 100%
 ## Environment Variables
 
 ### Required Configuration
-```
-OPENAI_API_KEY -> enables -> LLMAgents
-AGENTMAIL_API_KEY -> enables -> EmailAutomation
-DATABASE_URL -> connects -> PostgreSQL
-REDIS_URL -> enables -> TaskQueue
-CORS_ORIGINS -> allows -> FrontendAccess
+
+```mermaid
+flowchart TD
+    EnvVars[Environment Variables] --> OpenAIKey[OPENAI_API_KEY]
+    EnvVars --> AgentMailKey[AGENTMAIL_API_KEY]
+    EnvVars --> DatabaseURL[DATABASE_URL]
+    EnvVars --> RedisURL[REDIS_URL]
+    EnvVars --> CORSOrigins[CORS_ORIGINS]
+
+    OpenAIKey --> LLMAgents[LLM Agents Enabled]
+    AgentMailKey --> EmailAutomation[Email Automation]
+    DatabaseURL --> PostgreSQL[PostgreSQL Connection]
+    RedisURL --> TaskQueue[Task Queue Enabled]
+    CORSOrigins --> FrontendAccess[Frontend Access Allowed]
+
+    classDef envVar fill:#ffeb3b
+    classDef capability fill:#4caf50
+
+    class OpenAIKey,AgentMailKey,DatabaseURL,RedisURL,CORSOrigins envVar
+    class LLMAgents,EmailAutomation,PostgreSQL,TaskQueue,FrontendAccess capability
 ```
 
 ## Future Enhancements
 
 ### Planned Features
-```
-WebInterface -> provides -> UserDashboard
-RealtimeUpdates -> via -> WebSockets
-MLRanking -> improves -> DatasetRelevance
-AutoFollowup -> handles -> NoReplies
-IntegrationAPI -> exports -> OmicsOS
+
+```mermaid
+flowchart TD
+    FutureFeatures[Future Enhancements] --> WebInterface[Web Interface]
+    FutureFeatures --> RealtimeUpdates[Realtime Updates]
+    FutureFeatures --> MLRanking[ML Ranking System]
+    FutureFeatures --> AutoFollowup[Auto Follow-up]
+    FutureFeatures --> IntegrationAPI[Integration API]
+
+    WebInterface --> UserDashboard[User Dashboard]
+    RealtimeUpdates --> WebSockets[WebSocket Implementation]
+    MLRanking --> DatasetRelevance[Dataset Relevance Improvement]
+    AutoFollowup --> NoReplies[Handle No-Reply Scenarios]
+    IntegrationAPI --> OmicsOS[Export to OmicsOS]
+
+    classDef feature fill:#9c27b0
+    classDef implementation fill:#673ab7
+
+    class WebInterface,RealtimeUpdates,MLRanking,AutoFollowup,IntegrationAPI feature
+    class UserDashboard,WebSockets,DatasetRelevance,NoReplies,OmicsOS implementation
 ```
 
 ## Troubleshooting Guide
 
 ### Common Issues
-```
-BrowserTimeout -> increase -> WaitTime
-EmailNotSent -> check -> AgentMailKey
-NoResults -> verify -> SearchQuery
-PHIBlocked -> review -> ApprovalQueue
-RateLimited -> implement -> Backoff
+
+```mermaid
+flowchart TD
+    CommonIssues[Common Issues] --> BrowserTimeout[Browser Timeout]
+    CommonIssues --> EmailNotSent[Email Not Sent]
+    CommonIssues --> NoResults[No Results Found]
+    CommonIssues --> PHIBlocked[PHI Content Blocked]
+    CommonIssues --> RateLimited[Rate Limited]
+
+    BrowserTimeout --> IncreaseWaitTime[Increase Wait Time]
+    EmailNotSent --> CheckAgentMailKey[Check AgentMail API Key]
+    NoResults --> VerifySearchQuery[Verify Search Query]
+    PHIBlocked --> ReviewApprovalQueue[Review Approval Queue]
+    RateLimited --> ImplementBackoff[Implement Exponential Backoff]
+
+    classDef issue fill:#f44336
+    classDef solution fill:#4caf50
+
+    class BrowserTimeout,EmailNotSent,NoResults,PHIBlocked,RateLimited issue
+    class IncreaseWaitTime,CheckAgentMailKey,VerifySearchQuery,ReviewApprovalQueue,ImplementBackoff solution
 ```
 
 ## Contact & Support
@@ -382,3 +534,179 @@ This system was developed for the CodeRabbit hackathon to solve real pain points
 ---
 
 **Note**: This architecture document uses triplet syntax (subject-predicate-object) throughout to facilitate knowledge graph construction and make relationships explicit for automated parsing and understanding.
+
+## Interactive Demo (TUI)
+
+The repository includes a professional, interactive terminal UI (TUI) that runs the real end-to-end backend workflow using live browsers and human-gated email sending.
+
+- Location: `backend/demo.py`
+- Purpose: Run real Browser-Use scraping (NCBI/GEO and optional LinkedIn) and optional AgentMail outreach with explicit user approval.
+- UX: Rich-powered TUI with prompts, live progress, and results tables; no hardcoded queries.
+
+### Demo Relationships
+
+```mermaid
+flowchart TD
+    %% TUI Setup and Dependencies
+    TUI[TUI Interactive Demo] --> DemoLocation[backend/demo.py]
+    TUI --> OpenAIKey[OPENAI_API_KEY Required]
+    TUI --> AgentMailKey[AGENTMAIL_API_KEY Optional]
+
+    %% User Input Prompts
+    TUI --> UserPrompts[User Input Prompts]
+    UserPrompts --> ResearchQuery[Research Query]
+    UserPrompts --> MaxResults[Max Results]
+    UserPrompts --> ShowBrowser[Show Browser Toggle]
+    UserPrompts --> IncludeInternalContacts[Include LinkedIn Search]
+
+    %% Debug Configuration
+    ShowBrowser --> DebugMode[settings.DEBUG = True]
+
+    %% Agent Invocations
+    TUI --> PlannerAgent[Planner Agent]
+    PlannerAgent --> WorkflowPlan[Workflow Plan Generation]
+
+    TUI --> BioDatabaseAgent[Bio-Database Agent]
+    BioDatabaseAgent --> BrowserUseFramework[Browser-Use Framework]
+    BioDatabaseAgent --> NCBISearch[NCBI/GEO Search]
+    BioDatabaseAgent --> DatasetCandidates[Dataset Candidates]
+
+    TUI --> ColleaguesAgent[Colleagues Agent Optional]
+    ColleaguesAgent --> LinkedInBrowser[Browser-Use LinkedIn]
+    ColleaguesAgent --> LinkedInSearch[LinkedIn Company Search]
+    ColleaguesAgent --> InternalContacts[Internal Contacts]
+
+    %% Results Rendering
+    TUI --> ResultsDisplay[Results Display]
+    ResultsDisplay --> DatasetsTable[Datasets Table]
+    ResultsDisplay --> ContactsTable[Contacts Table]
+
+    %% Human-in-the-Loop Workflow
+    TUI --> UserInteraction[User Interaction]
+    UserInteraction --> DatasetSelection[Dataset Selection for Outreach]
+    UserInteraction --> PHIApprovalGate[PHI Approval Gate]
+    UserInteraction --> EmailConfirmation[Email Send Confirmation]
+
+    %% Email Outreach
+    EmailConfirmation --> EmailAgent[Email Agent]
+    EmailAgent --> AgentMailClient[AgentMail Client]
+    EmailAgent --> OutreachEmails[Outreach Email Sending]
+    EmailAgent --> EmailProvenance[Email Provenance Logging]
+
+    %% Summary Generation
+    TUI --> SummarizerAgent[Summarizer Agent]
+    SummarizerAgent --> ExecutiveSummary[Executive Summary]
+
+    %% Audit Trail
+    TUI --> ProvenanceTrail[Complete Provenance Trail]
+
+    %% Safety Gates
+    PHIApprovalGate --> ManualApproval[Manual Approval Required]
+    EmailConfirmation --> ExplicitConsent[Explicit User Consent]
+
+    %% Styling
+    classDef tui fill:#4fc3f7
+    classDef agent fill:#81c784
+    classDef safety fill:#ff8a65
+    classDef output fill:#ba68c8
+    classDef user fill:#ffd54f
+
+    class TUI,ResultsDisplay,UserInteraction tui
+    class PlannerAgent,BioDatabaseAgent,ColleaguesAgent,EmailAgent,SummarizerAgent agent
+    class PHIApprovalGate,ManualApproval,ExplicitConsent safety
+    class DatasetsTable,ContactsTable,ExecutiveSummary,ProvenanceTrail output
+    class UserPrompts,DatasetSelection,EmailConfirmation user
+```
+
+### Demo Execution Flow
+
+1. Banner and environment validation
+   - Validates OPENAI_API_KEY for Browser-Use (required).
+   - If sending emails is requested, validates AGENTMAIL_API_KEY.
+
+2. Prompt-driven inputs
+   - Research query (with suggestions).
+   - Max results per source (default 5).
+   - Show live browsers (headless=False) toggle.
+   - Include internal colleagues (LinkedIn) toggle.
+   - Requester identity (name/email/title).
+   - Company name for LinkedIn (if enabled).
+
+3. Agent orchestration (explicit per step)
+   - planner_agent → plan summary (table)
+   - bio_database_agent (GEO) → datasets (live browser visible when ShowBrowser=true)
+   - colleagues_agent (LinkedIn, optional) → contacts (live browser visible)
+   - summarizer_agent → executive summary
+
+4. Outreach (human-in-the-loop)
+   - User selects datasets (indexes or “all”) where (access_type ∈ {request, restricted}) and contact_email is present.
+   - PHI safety: If titles contain hints (“clinical”, “patient”, “phi”), demo requires explicit approval.
+   - Email send requires explicit confirmation even when launched with `--send-emails`.
+   - AgentMail send result table (status, message_id, error).
+
+5. Summary and provenance
+   - Console summary with executive insights.
+   - Provenance logged for key actions.
+
+### How to Run the Demo
+
+- Interactive TUI (recommended):
+  ```
+  python backend/demo.py
+  ```
+- With flags:
+  ```
+  # Include internal LinkedIn search and show live browsers
+  python backend/demo.py --include-internal --show-browser
+
+  # Provide a query and enable email sending (still requires confirmation in TUI)
+  python backend/demo.py --query "TP53 lung adenocarcinoma RNA-seq" --max-results 3 --show-browser --send-emails
+  ```
+
+### Demo Environment Requirements
+
+```
+OPENAI_API_KEY -> enables -> BrowserUseLLM
+AGENTMAIL_API_KEY -> enables -> EmailAutomation  # only required if sending emails
+REQUESTER_NAME -> default -> "Researcher"         # optional; TUI will prompt
+REQUESTER_EMAIL -> default -> "researcher@example.com"
+REQUESTER_TITLE -> default -> "Researcher"
+COMPANY_NAME -> default -> "YourCompany"         # used for LinkedIn search prompt
+```
+
+- The TUI toggles `settings.DEBUG` to `True` when ShowBrowser is enabled so that scrapers run with headless=False.
+- If keys are missing, TUI warns and can proceed with those features disabled.
+
+### Demo-Specific Safety & Compliance
+
+```
+TUI -> detects -> PHIIndicators
+PHIIndicators -> include -> ["clinical", "patient", "phi"]
+PHIIndicators -> require -> ManualApproval
+EmailSend -> requires -> ExplicitUserConfirmation
+Outreach -> logs -> Provenance
+```
+
+- All sending is opt-in and requires explicit user confirmation in the TUI.
+- If sensitive hints are detected, the TUI enforces a manual approval gate.
+
+### Demo Troubleshooting
+
+```
+NoBrowserWindow -> verify -> settings.DEBUG(true) and --show-browser flag
+BrowserUseImportError -> verify -> browser-use installed (see backend/requirements.txt)
+OPENAI_API_KEYMissing -> set -> export OPENAI_API_KEY=...
+AGENTMAIL_API_KEYMissing -> set -> export AGENTMAIL_API_KEY=...  # if sending emails
+LinkedInBlocked -> try -> public search only or reduce steps (anti-bot protections)
+GEOBlocked/Timeout -> rerun -> with more time or smaller max_results
+```
+
+- The TUI will continue gracefully if LinkedIn search fails (anti-bot) or if GEO throttles; it will display results for whatever succeeded and still allow you to proceed or skip sending.
+
+### Demo KPIs (Observed)
+
+```
+LiveSearchTime -> typically -> under 2-5 minutes (depends on anti-bot and network)
+OutreachSelection -> reduces -> manual drafting time to seconds
+HumanApprovalGate -> ensures -> PHI compliance in live runs
+```

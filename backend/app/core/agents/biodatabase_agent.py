@@ -176,6 +176,43 @@ async def search_ncbi_geo(ctx: RunContext[DatabaseSearchParams]) -> List[Dict[st
     return results
 
 
+async def search_geo_direct(query: str, max_results: int) -> List[Dict[str, Any]]:
+    """
+    Deterministic GEO search that bypasses the LLM agent and returns structured JSON.
+    Avoids any hardcoded keywords/heuristics and simply normalizes scraper output.
+    """
+    scraper = GEOScraper(headless=not bool(getattr(settings, "DEBUG", False)))
+    raw = await scraper.search_datasets(query=query, max_results=max_results)
+
+    results: List[Dict[str, Any]] = []
+    for r in raw:
+        contact_name = r.get("contact_name")
+        contact_email = r.get("contact_email")
+        contact_info = {"name": contact_name, "email": contact_email} if (contact_name or contact_email) else None
+        results.append(
+            {
+                "accession": r.get("accession", ""),
+                "title": r.get("title", ""),
+                "description": r.get("description"),
+                "modalities": r.get("modalities", []),
+                "cancer_types": r.get("cancer_types", []),
+                "sample_size": r.get("sample_size"),
+                "access_type": r.get("access_type", "public"),
+                "download_url": r.get("download_url"),
+                "contact_info": contact_info,
+                "link": r.get("link"),
+                "relevance_score": 0.0,
+            }
+        )
+
+    await log_provenance(
+        actor="bio_database_agent",
+        action="searched_geo_direct",
+        details={"query": query, "results_count": len(results)},
+    )
+    return results
+
+
 @bio_database_agent.tool
 async def evaluate_dataset_relevance(ctx: RunContext[DatabaseSearchParams], dataset: Dict[str, Any]) -> float:
     """

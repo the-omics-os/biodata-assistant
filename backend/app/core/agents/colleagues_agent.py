@@ -124,7 +124,7 @@ async def search_linkedin_employees(ctx: RunContext[ColleagueSearchParams]) -> L
     from app.core.scrapers.linkedin_scraper import LinkedInScraper
 
     scraper = LinkedInScraper(headless=not bool(getattr(settings, "DEBUG", False)))
-    kw = list({*(ctx.deps.keywords or []), "cancer", "genomics", "data"})
+    kw = list(ctx.deps.keywords or [])
     results = await scraper.find_company_employees(
         company=ctx.deps.company,
         departments=ctx.deps.departments,
@@ -136,6 +136,43 @@ async def search_linkedin_employees(ctx: RunContext[ColleagueSearchParams]) -> L
         actor="colleagues_agent",
         action="searched_linkedin",
         details={"company": ctx.deps.company, "found_count": len(results)},
+    )
+    return results
+
+
+async def search_linkedin_direct(company: str, departments: List[str], keywords: List[str], max_results: int = 10) -> List[Dict[str, Any]]:
+    """
+    Deterministic LinkedIn search that bypasses the LLM agent and returns structured JSON.
+    Avoids any hardcoded keywords/heuristics and simply normalizes scraper output.
+    """
+    from app.core.scrapers.linkedin_scraper import LinkedInScraper
+
+    scraper = LinkedInScraper(headless=not bool(getattr(settings, "DEBUG", False)))
+    raw = await scraper.find_company_employees(
+        company=company,
+        departments=departments,
+        keywords=keywords or [],
+        max_results=max_results,
+    )
+    results: List[Dict[str, Any]] = []
+    for r in raw or []:
+        results.append(
+            {
+                "name": r.get("name"),
+                "job_title": r.get("job_title"),
+                "department": r.get("department"),
+                "company": r.get("company") or company,
+                "linkedin_url": r.get("linkedin_url"),
+                "email": r.get("email"),
+                "email_suggestions": r.get("email_suggestions") or [],
+                "relevance_score": float(max(0.0, min(1.0, float(r.get("relevance_score") or 0)))),
+                "reason_for_contact": "Matches provided keywords/departments",
+            }
+        )
+    await log_provenance(
+        actor="colleagues_agent",
+        action="searched_linkedin_direct",
+        details={"company": company, "found_count": len(results)},
     )
     return results
 

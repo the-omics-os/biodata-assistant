@@ -30,6 +30,10 @@ import os
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
+import json
+import csv
+from datetime import datetime
+
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -50,9 +54,119 @@ from app.core.agents import (
     ColleagueSearchParams,
     EmailOutreachParams,
 )
+from app.core.agents.planner_agent import create_workflow_plan
 from app.core.utils.provenance import log_provenance
+from app.core.database import init_db
+from app.utils.email_templates import generate_email_template
 
 console = Console()
+
+
+def flatten_contact_info(d: Dict[str, Any]) -> Dict[str, Any]:
+    """Flatten nested contact_info into contact_name/contact_email on root."""
+    ci = d.get("contact_info") or {}
+    if isinstance(ci, dict):
+        d.setdefault("contact_name", ci.get("name"))
+        d.setdefault("contact_email", ci.get("email"))
+    return d
+
+
+def ensure_exports_dir() -> str:
+    path = os.path.join("backend", "exports")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def save_json_artifact(name: str, data: Any) -> str:
+    path = ensure_exports_dir()
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    fname = f"{name}_{ts}.json"
+    fpath = os.path.join(path, fname)
+    with open(fpath, "w") as f:
+        json.dump(data, f, indent=2)
+    return fpath
+
+
+def save_csv(name: str, rows: List[Dict[str, Any]], fields: List[str]) -> str:
+    path = ensure_exports_dir()
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    fname = f"{name}_{ts}.csv"
+    fpath = os.path.join(path, fname)
+    with open(fpath, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({k: row.get(k) for k in fields})
+    return fpath
+
+
+def filter_and_sort_datasets(datasets: List[Dict[str, Any]], reqs: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Apply user-provided filters (modalities, cancer_types, organism, min_samples)
+    and sort by sample_size descending for easier triage.
+    """
+    if not datasets:
+        return datasets
+
+    modalities = set([m.lower() for m in (reqs.get("modalities") or [])])
+    cancer_tokens = [c.lower() for c in (reqs.get("cancer_types") or [])]
+    organism = (reqs.get("organism") or "").lower().strip()
+    min_samples = reqs.get("min_samples")
+
+    def matches(d: Dict[str, Any]) -> bool:
+        # Modality overlap (if specified)
+        if modalities:
+            ds_mods = {str(m).lower() for m in (d.get("modalities") or [])}
+            if not (ds_mods & modalities):
+                return False
+        # Cancer tokens in title or structured cancer_types
+        if cancer_tokens:
+            title = (d.get("title") or "").lower()
+            ds_cancers = [str(c).lower() for c in (d.get("cancer_types") or [])]
+            if not any(tok in title for tok in cancer_tokens) and not any(tok in " ".join(ds_cancers) for tok in cancer_tokens):
+                return False
+        # Organism exact match (if provided)
+        if organism:
+            org = (d.get("organism") or "").lower()
+            if organism != org:
+                return False
+        # Minimum sample size
+        if isinstance(min_samples, int):
+            try:
+                n = int(d.get("sample_size") or 0)
+                if n < min_samples:
+                    return False
+            except Exception:
+                return False
+        return True
+
+    filtered = [flatten_contact_info(d.copy()) for d in datasets if matches(d)]
+    # Sort by sample_size desc (None -> 0)
+    def sort_key(d: Dict[str, Any]) -> Tuple[int, str]:
+        try:
+            n = int(d.get("sample_size") or 0)
+        except Exception:
+            n = 0
+        return (n, str(d.get("accession") or d.get("title") or ""))
+
+    filtered.sort(key=sort_key, reverse=True)
+    return filtered
+
+
+def prompt_research_requirements() -> Dict[str, Any]:
+    """Prompt for optional filters to better scope the search."""
+    console.print("\n[bold]Refine requirements (optional):[/bold]")
+    modalities = Prompt.ask("Modalities (comma, e.g., rna-seq,scrna-seq,proteomics)", default="").strip()
+    cancer_types = Prompt.ask("Cancer types (comma, e.g., lung adenocarcinoma,tnbc,breast)", default="").strip()
+    organism = Prompt.ask("Organism", default="Homo sapiens").strip()
+    min_samples = Prompt.ask("Minimum sample size (integer, optional)", default="").strip()
+    req = {
+        "modalities": [m.strip() for m in modalities.split(",") if m.strip()],
+        "cancer_types": [c.strip() for c in cancer_types.split(",") if c.strip()],
+        "organism": organism,
+        "min_samples": int(min_samples) if min_samples.isdigit() else None,
+    }
+    return req
 
 
 def parse_args() -> argparse.Namespace:
@@ -114,13 +228,11 @@ def banner() -> None:
     )
 
 
-async def run_planner(query: str) -> Dict[str, Any]:
-    req = SearchRequest(query=query)
-    plan_run = await planner_agent.run(req)
-    out = plan_run.output
-    if hasattr(out, "model_dump"):
-        return out.model_dump()
-    return dict(out)
+async def run_planner(req: SearchRequest) -> Dict[str, Any]:
+    plan = await create_workflow_plan(req)
+    if hasattr(plan, "model_dump"):
+        return plan.model_dump()
+    return dict(plan)
 
 
 def render_plan(plan: Dict[str, Any]) -> None:
@@ -136,34 +248,25 @@ def render_plan(plan: Dict[str, Any]) -> None:
 
 
 async def run_geo(query: str, max_results: int) -> List[Dict[str, Any]]:
-    params = DatabaseSearchParams(
-        query=query,
-        database="GEO",
-        max_results=max_results,
-        filters={},
-    )
-    run = await bio_database_agent.run(params)
-    out = run.output or []
-    # Normalize to list of dict (DatasetCandidate is pydantic model)
+    from app.core.agents.biodatabase_agent import search_geo_direct
+    out = await search_geo_direct(query=query, max_results=max_results)
     results: List[Dict[str, Any]] = []
-    for item in out:
-        if hasattr(item, "model_dump"):
-            results.append(item.model_dump())
-        elif isinstance(item, dict):
-            results.append(item)
+    for item in out or []:
+        d = item.model_dump() if hasattr(item, "model_dump") else dict(item)
+        d["database"] = "GEO"
+        d = flatten_contact_info(d)
+        if d.get("modalities") and not isinstance(d.get("modalities"), list):
+            d["modalities"] = [str(d["modalities"])]
+        results.append(d)
     return results
 
 
-async def run_linkedin(company: str, keywords: List[str]) -> List[Dict[str, Any]]:
-    params = ColleagueSearchParams(company=company, keywords=keywords)
-    run = await colleagues_agent.run(params)
-    out = run.output or []
+async def run_linkedin(company: str, departments: List[str], keywords: List[str]) -> List[Dict[str, Any]]:
+    from app.core.agents.colleagues_agent import search_linkedin_direct
+    out = await search_linkedin_direct(company=company, departments=departments, keywords=keywords, max_results=10)
     contacts: List[Dict[str, Any]] = []
-    for item in out:
-        if hasattr(item, "model_dump"):
-            contacts.append(item.model_dump())
-        elif isinstance(item, dict):
-            contacts.append(item)
+    for item in out or []:
+        contacts.append(item.model_dump() if hasattr(item, "model_dump") else dict(item))
     return contacts
 
 
@@ -180,7 +283,7 @@ def render_datasets(datasets: List[Dict[str, Any]]) -> None:
 
     for idx, d in enumerate(datasets, start=1):
         mods = ", ".join([str(m) for m in (d.get("modalities") or [])])
-        contact = d.get("contact_email") or "-"
+        contact = d.get("contact_email") or ((d.get("contact_info") or {}).get("email") if isinstance(d.get("contact_info"), dict) else None) or "-"
         t.add_row(
             str(idx),
             str(d.get("accession") or ""),
@@ -223,7 +326,9 @@ def select_datasets_for_outreach(datasets: List[Dict[str, Any]]) -> List[Dict[st
     # Preselect request/restricted datasets with a contact email
     eligible_idx = [
         i for i, d in enumerate(datasets, start=1)
-        if str(d.get("access_type", "")).lower() in {"request", "restricted"} and d.get("contact_email")
+        if str(d.get("access_type", "")).lower() in {"request", "restricted"} and (
+            d.get("contact_email") or ((d.get("contact_info") or {}).get("email") if isinstance(d.get("contact_info"), dict) else None)
+        )
     ]
 
     if not eligible_idx:
@@ -260,28 +365,28 @@ async def send_outreach_for_datasets(
     requester_name: str,
     requester_email: str,
     requester_title: str,
+    project_context: str,
 ) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
     for d in datasets:
+        contact_email = d.get("contact_email") or ((d.get("contact_info") or {}).get("email") if isinstance(d.get("contact_info"), dict) else None)
+        if not contact_email:
+            results.append({"success": False, "status": "skipped_no_contact", "error": "Missing contact email"})
+            continue
         params = EmailOutreachParams(
             dataset_id=str(d.get("accession") or ""),
             dataset_title=str(d.get("title") or ""),
             requester_name=requester_name,
             requester_email=requester_email,
             requester_title=requester_title,
-            contact_name=str(d.get("contact_name") or "Data Custodian"),
-            contact_email=str(d.get("contact_email")),
-            project_description=str(d.get("title") or ""),
+            contact_name=str(d.get("contact_name") or ((d.get("contact_info") or {}).get("name") if isinstance(d.get("contact_info"), dict) else "Data Custodian")),
+            contact_email=str(contact_email or ""),
+            project_description=f"{project_context}\n\nDataset: {str(d.get('title') or '')} ({str(d.get('accession') or '')})",
         )
         try:
-            run = await email_agent.run(params)
-            out = run.output
-            if hasattr(out, "model_dump"):
-                results.append(out.model_dump())
-            elif isinstance(out, dict):
-                results.append(out)
-            else:
-                results.append({"success": True, "status": "sent"})
+            from app.core.agents.email_agent import send_outreach_direct
+            res = await send_outreach_direct(params)
+            results.append(res)
         except Exception as e:
             results.append({"success": False, "status": "failed", "error": str(e)})
     return results
@@ -307,9 +412,15 @@ async def main() -> None:
     args = parse_args()
     banner()
 
+    # Ensure database tables exist before any provenance logging
+    try:
+        await init_db()
+    except Exception:
+        pass
+
     # Interactive inputs
     default_suggestions = [
-        "Find all P53 mutation datasets in lung adenocarcinoma with RNA-seq data",
+        "I'm looking for a dataset from human plasma proteomics & transcriptomics in breast or lung cancer. I'm curious about the behavior of P53 mutations.",
         "Triple negative breast cancer proteomics and transcriptomics datasets",
         "P53 pathway proteomics in breast cancer cohorts",
     ]
@@ -331,6 +442,17 @@ async def main() -> None:
         max_results = max(1, int(args.max_results))
     else:
         max_results = max(1, IntPrompt.ask("Max results to fetch from GEO", default=5))
+
+    # Refine research requirements
+    reqs = prompt_research_requirements()
+    refined_tokens: List[str] = []
+    if reqs.get("organism"):
+        refined_tokens.append(reqs["organism"])
+    if reqs.get("modalities"):
+        refined_tokens.extend(reqs["modalities"])
+    if reqs.get("cancer_types"):
+        refined_tokens.extend(reqs["cancer_types"])
+    refined_query = (query + " " + " ".join(refined_tokens)).strip()
 
     # Show browsers (headless=False) toggle
     if args.show_browser:
@@ -366,20 +488,34 @@ async def main() -> None:
 
     # Company for LinkedIn search (when enabled)
     company = ""
+    departments: List[str] = []
+    li_keywords: List[str] = []
     if include_internal:
-        company = Prompt.ask("Company to search on LinkedIn (public search)", default=os.getenv("COMPANY_NAME", "YourCompany"))
+        company = Prompt.ask("Company to search on LinkedIn (public search)", default=os.getenv("COMPANY_NAME", "Omics-OS"))
+        departments_str = Prompt.ask("Departments to include (comma-separated)", default="Bioinformatics,Genomics,Oncology,Data Science")
+        departments = [d.strip() for d in departments_str.split(",") if d.strip()]
+        keywords_str = Prompt.ask("Role keywords (comma-separated)", default="cancer,genomics,data")
+        li_keywords = [k.strip() for k in keywords_str.split(",") if k.strip()]
 
+    # Build search request
+    search_req = SearchRequest(
+        query=(refined_query if 'refined_query' in locals() and refined_query else query),
+        modalities=(reqs.get("modalities") if 'reqs' in locals() else None),
+        cancer_types=(reqs.get("cancer_types") if 'reqs' in locals() else None),
+        include_internal=include_internal,
+        max_results=max_results,
+    )
     await log_provenance(
         actor=requester_email or "user",
         action="tui_started",
-        details={"query": query, "max_results": max_results, "include_internal": include_internal, "show_browser": show_browser},
+        details={"query": search_req.query, "max_results": max_results, "include_internal": include_internal, "show_browser": show_browser},
     )
 
     # Execution
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console) as progress:
         tk = progress.add_task("[cyan]Planning...", total=None)
         try:
-            plan = await run_planner(query)
+            plan = await run_planner(search_req)
             progress.update(tk, description="[green]✓ Plan created", completed=True)
         except Exception as e:
             progress.update(tk, description=f"[red]Plan failed: {e}", completed=True)
@@ -387,8 +523,51 @@ async def main() -> None:
 
         tk = progress.add_task("[cyan]Searching GEO (live browser)...", total=None)
         try:
-            datasets = await run_geo(query, max_results)
+            datasets = await run_geo(search_req.query, max_results)
             progress.update(tk, description=f"[green]✓ GEO results: {len(datasets)}", completed=True)
+            # Save dataset artifacts
+            try:
+                ds_rows = [
+                    {
+                        "accession": d.get("accession"),
+                        "title": d.get("title"),
+                        "modalities": ", ".join(d.get("modalities") or []),
+                        "sample_size": d.get("sample_size"),
+                        "access_type": d.get("access_type"),
+                        "contact_email": d.get("contact_email") or ((d.get("contact_info") or {}).get("email") if isinstance(d.get("contact_info"), dict) else None),
+                        "link": d.get("link"),
+                    }
+                    for d in datasets
+                ]
+                ds_json_path = save_json_artifact("datasets_geo", datasets)
+                ds_csv_path = save_csv("datasets_geo", ds_rows, ["accession","title","modalities","sample_size","access_type","contact_email","link"])
+                console.print(f"[dim]Saved datasets to {ds_json_path} and {ds_csv_path}[/dim]")
+                # Apply filters if provided
+                try:
+                    filtered = filter_and_sort_datasets(datasets, reqs)
+                    if len(filtered) != len(datasets):
+                        console.print(f"[dim]Applied filters -> {len(filtered)}/{len(datasets)} datasets match[/dim]")
+                    datasets = filtered
+                    # Save filtered artifacts
+                    f_json = save_json_artifact("datasets_geo_filtered", datasets)
+                    f_csv_rows = [
+                        {
+                            "accession": d.get("accession"),
+                            "title": d.get("title"),
+                            "modalities": ", ".join(d.get("modalities") or []),
+                            "sample_size": d.get("sample_size"),
+                            "access_type": d.get("access_type"),
+                            "contact_email": d.get("contact_email") or ((d.get("contact_info") or {}).get("email") if isinstance(d.get("contact_info"), dict) else None),
+                            "link": d.get("link"),
+                        }
+                        for d in datasets
+                    ]
+                    f_csv = save_csv("datasets_geo_filtered", f_csv_rows, ["accession","title","modalities","sample_size","access_type","contact_email","link"])
+                    console.print(f"[dim]Saved filtered datasets to {f_json} and {f_csv}[/dim]")
+                except Exception:
+                    pass
+            except Exception:
+                pass
         except Exception as e:
             progress.update(tk, description=f"[red]GEO search failed: {e}", completed=True)
             datasets = []
@@ -397,8 +576,25 @@ async def main() -> None:
         if include_internal:
             tk = progress.add_task("[cyan]Searching LinkedIn (live browser)...", total=None)
             try:
-                contacts = await run_linkedin(company, keywords=["cancer", "genomics", "data"])
+                contacts = await run_linkedin(company, departments=departments, keywords=li_keywords or ["cancer", "genomics", "data"])
                 progress.update(tk, description=f"[green]✓ Contacts found: {len(contacts)}", completed=True)
+                try:
+                    ct_rows = [
+                        {
+                            "name": c.get("name"),
+                            "job_title": c.get("job_title"),
+                            "department": c.get("department"),
+                            "email": c.get("email") or (", ".join(c.get("email_suggestions", []) or [])),
+                            "linkedin_url": c.get("linkedin_url"),
+                            "relevance_score": c.get("relevance_score"),
+                        }
+                        for c in contacts
+                    ]
+                    ct_json_path = save_json_artifact("contacts_linkedin", contacts)
+                    ct_csv_path = save_csv("contacts_linkedin", ct_rows, ["name","job_title","department","email","linkedin_url","relevance_score"])
+                    console.print(f"[dim]Saved contacts to {ct_json_path} and {ct_csv_path}[/dim]")
+                except Exception:
+                    pass
             except Exception as e:
                 progress.update(tk, description=f"[red]LinkedIn search failed: {e}", completed=True)
 
@@ -426,6 +622,21 @@ async def main() -> None:
                 chosen = []
 
     if chosen:
+        # Optional email preview
+        if Confirm.ask("Preview outreach emails before sending?", default=True):
+            for d in chosen:
+                contact_name = str(d.get("contact_name") or ((d.get("contact_info") or {}).get("name") if isinstance(d.get("contact_info"), dict) else "Data Custodian"))
+                tpl = generate_email_template(
+                    template_type="data_request",
+                    dataset_title=str(d.get("title") or ""),
+                    requester_name=requester_name,
+                    requester_title=requester_title,
+                    contact_name=contact_name,
+                    project_description=(refined_query if 'refined_query' in locals() and refined_query else query),
+                )
+                body_preview = (tpl.get("body","")[:600] + ("..." if len(tpl.get("body",""))>600 else ""))
+                console.print(Panel.fit(f"Subject: {tpl.get('subject','')}\n\n{body_preview}", title=f"Preview: {d.get('accession') or d.get('title')}"))
+
         # Allow sending?
         if not allow_send_flag and not Confirm.ask("Send emails now via AgentMail?", default=False):
             console.print("[yellow]Skipping email sending.[/yellow]")
@@ -438,7 +649,11 @@ async def main() -> None:
                     console.print("[yellow]Email sending cancelled by user.[/yellow]")
                 else:
                     outreach_results = await send_outreach_for_datasets(
-                        chosen, requester_name=requester_name, requester_email=requester_email, requester_title=requester_title
+                        chosen,
+                        requester_name=requester_name,
+                        requester_email=requester_email,
+                        requester_title=requester_title,
+                        project_context=(refined_query if 'refined_query' in locals() and refined_query else query),
                     )
                     # Render outreach results
                     console.print("\n[bold green]✉️ Outreach Results[/bold green]")
@@ -455,12 +670,36 @@ async def main() -> None:
                             str(res.get("error") or res.get("error_message") or "-"),
                         )
                     console.print(ot)
+                    try:
+                        orows = [
+                            {
+                                "dataset": (d.get("accession") or d.get("title")),
+                                "status": (res.get("status") or ("sent" if res.get("success") else "failed")),
+                                "message_id": res.get("message_id"),
+                                "error": res.get("error") or res.get("error_message"),
+                            }
+                            for d, res in zip(chosen, outreach_results)
+                        ]
+                        ojson = save_json_artifact("outreach_results", outreach_results)
+                        ocsv = save_csv("outreach_results", orows, ["dataset","status","message_id","error"])
+                        console.print(f"[dim]Saved outreach results to {ojson} and {ocsv}[/dim]")
+                    except Exception:
+                        pass
 
     # Summary
     try:
         summary = await summarize(query, datasets, contacts, outreach_results)
         console.print("\n[bold cyan]🧾 Summary[/bold cyan]")
         console.print(summary.get("executive_summary", ""))
+        if summary.get("next_steps"):
+            console.print("\n[bold]Next steps:[/bold]")
+            for s in summary["next_steps"]:
+                console.print(f"- {s}")
+        try:
+            sjson = save_json_artifact("summary", summary)
+            console.print(f"[dim]Saved summary to {sjson}[/dim]")
+        except Exception:
+            pass
     except Exception:
         summary = {}
 

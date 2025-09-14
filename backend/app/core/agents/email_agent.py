@@ -166,3 +166,89 @@ async def send_via_agentmail(ctx: RunContext[EmailOutreachParams], email_content
         pass
 
     return {"success": False, "status": "failed", "message_id": None, "thread_id": None}  # type: ignore[return-value]
+
+
+async def send_outreach_direct(params: EmailOutreachParams) -> Dict[str, Optional[str]]:
+    """
+    Deterministic email send that bypasses the LLM agent and returns structured JSON.
+    - Composes the email using our template utilities
+    - Applies PHI/seniority gate
+    - Sends via AgentMailClient
+    - Returns a dict compatible with EmailResult fields
+    """
+    # PHI / seniority gate
+    if _requires_human_approval(params):
+        await log_provenance(
+            actor=params.requester_email,
+            action="outreach_requires_approval",
+            resource_type="outreach",
+            resource_id=params.dataset_id,
+            details={"contact": params.contact_email},
+        )
+        return {
+            "success": False,
+            "status": "pending_approval",
+            "message_id": None,
+            "thread_id": None,
+            "error_message": None,
+        }
+
+    # Compose
+    template = generate_email_template(
+        template_type="data_request",
+        dataset_title=params.dataset_title,
+        requester_name=params.requester_name,
+        requester_title=params.requester_title,
+        contact_name=params.contact_name,
+        project_description=params.project_description,
+    )
+    if params.urgency == "high":
+        template["subject"] = f"[URGENT] {template.get('subject','')}"
+
+    # Send
+    client = AgentMailClient()
+    message = EmailMessage(
+        to=params.contact_email,
+        from_email=params.requester_email,
+        subject=template.get("subject", ""),
+        body=template.get("body", ""),
+        metadata={
+            "dataset_id": params.dataset_id,
+            "thread_type": "data_request",
+            "requester": str(params.requester_email),
+        },
+    )
+
+    result = await client.send_email(message)
+
+    if result.get("success"):
+        await log_provenance(
+            actor=params.requester_email,
+            action="sent_outreach",
+            resource_type="outreach",
+            resource_id=params.dataset_id,
+            details={"recipient": str(params.contact_email), "message_id": result.get("message_id")},
+        )
+        return {
+            "success": True,
+            "status": "sent",
+            "message_id": result.get("message_id"),
+            "thread_id": result.get("thread_id"),
+            "error_message": None,
+        }
+
+    # Failure
+    await log_provenance(
+        actor=params.requester_email,
+        action="outreach_failed",
+        resource_type="outreach",
+        resource_id=params.dataset_id,
+        details={"recipient": str(params.contact_email), "status_code": result.get("status_code"), "error": str(result.get("error"))},
+    )
+    return {
+        "success": False,
+        "status": "failed",
+        "message_id": None,
+        "thread_id": None,
+        "error_message": str(result.get("error")) if result.get("error") else None,
+    }

@@ -118,17 +118,16 @@ Speed optimization instructions:
             # Task: use the GDS portal which routes GEO/GDS series
             search_task = f"""
 1. Navigate to https://www.ncbi.nlm.nih.gov/gds
-2. In the search box, search for: {query} with cancer-related focus terms (P53, TP53, TNBC, lung adenocarcinoma, breast cancer)
-3. Prefer Homo sapiens when applicable
-4. For the first {max_results} results, extract:
+2. In the search box, search for: {query}
+3. For the first {max_results} results, extract:
    - accession (GSE or GDS)
    - title
    - organism
-   - modalities (RNA-seq / scRNA-seq / microarray / proteomics)
+   - modalities (e.g., RNA-seq, scRNA-seq, microarray, proteomics)
    - sample_size (approximate integer)
    - access_type (public/request/restricted)
    - link (result page)
-5. Return strictly as a JSON array
+4. Return strictly as a JSON array
 """
 
             # Fast LLM as per docs
@@ -313,44 +312,49 @@ Return strictly as JSON with keys: contact_name, contact_email, download_url, pu
         return []
 
     def _mock_results(self, query: str, max_results: int) -> List[Dict[str, Any]]:
-        """Return cancer-focused mock GEO results for MVP/demo when scraping is unavailable."""
+        """Return generic mock GEO results for MVP/demo when scraping is unavailable."""
+        q = (query or "").strip()
+        title1 = f"{q} dataset A".strip() if q else "Dataset A"
+        title2 = f"{q} dataset B".strip() if q else "Dataset B"
+        title3 = f"{q} dataset C".strip() if q else "Dataset C"
+
         base = [
             {
-                "accession": "GSE999001",
-                "title": "TP53-driven lung adenocarcinoma RNA-seq",
+                "accession": "GSE100001",
+                "title": title1,
                 "organism": "Homo sapiens",
                 "modalities": ["rna-seq"],
-                "cancer_types": ["lung adenocarcinoma"],
+                "cancer_types": [],
                 "sample_size": 120,
                 "access_type": "public",
-                "download_url": "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE999nnn/GSE999001/suppl/",
-                "publication_url": "https://pubmed.ncbi.nlm.nih.gov/12345678/",
-                "pubmed_id": "12345678",
+                "download_url": "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE100nnn/GSE100001/suppl/",
+                "publication_url": None,
+                "pubmed_id": None,
                 "contact_name": "Dr. Jane Doe",
-                "contact_email": "jane.doe@university.edu",
-                "link": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE999001",
+                "contact_email": "jane.doe@example.org",
+                "link": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE100001",
             },
             {
-                "accession": "GSE999002",
-                "title": "TNBC single-cell transcriptomics (10x Genomics)",
+                "accession": "GSE100002",
+                "title": title2,
                 "organism": "Homo sapiens",
                 "modalities": ["scrna-seq"],
-                "cancer_types": ["triple negative breast cancer"],
-                "sample_size": 45_000,  # cells
+                "cancer_types": [],
+                "sample_size": 45000,  # cells
                 "access_type": "public",
-                "download_url": "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE999nnn/GSE999002/suppl/",
+                "download_url": "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE100nnn/GSE100002/suppl/",
                 "publication_url": None,
                 "pubmed_id": None,
                 "contact_name": "Dr. John Smith",
-                "contact_email": "john.smith@cancercenter.org",
-                "link": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE999002",
+                "contact_email": "john.smith@example.org",
+                "link": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE100002",
             },
             {
-                "accession": "GSE999003",
-                "title": "P53 pathway proteomics in breast cancer cohorts",
+                "accession": "GSE100003",
+                "title": title3,
                 "organism": "Homo sapiens",
                 "modalities": ["proteomics"],
-                "cancer_types": ["breast cancer"],
+                "cancer_types": [],
                 "sample_size": 80,
                 "access_type": "request",
                 "download_url": None,
@@ -358,13 +362,17 @@ Return strictly as JSON with keys: contact_name, contact_email, download_url, pu
                 "pubmed_id": None,
                 "contact_name": None,
                 "contact_email": None,
-                "link": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE999003",
+                "link": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE100003",
             },
         ]
-        # Simple relevance filter: prefer items containing query tokens
-        q = (query or "").lower()
-        filtered = [i for i in base if any(tok and tok in (i.get("title", "").lower()) for tok in q.split())] or base
-        return filtered[: max_results]
+
+        tokens = [t for t in re.split(r"\s+", q.lower()) if t]
+        def matches(item: Dict[str, Any]) -> bool:
+            title = (item.get("title") or "").lower()
+            return any(tok in title for tok in tokens) if tokens else True
+
+        filtered = [i for i in base if matches(i)] or base
+        return filtered[:max_results]
 
     async def _log_provenance(self, action: str, details: Dict[str, Any]) -> None:
         """Log action for audit trail"""

@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 from typing import Optional, List
 import os
 import logging
@@ -6,23 +7,23 @@ import json
 
 class Settings(BaseSettings):
     # Application
-    APP_NAME: str = "Biodata Assistant"
-    VERSION: str = "1.0.0"
-    DEBUG: bool = False
+    APP_NAME: str = Field(default="Biodata Assistant", description="Application name")
+    VERSION: str = Field(default="1.0.0", description="Application version")
+    DEBUG: bool = Field(default=False, description="Debug mode")
     
     # Database
-    DATABASE_URL: str = "sqlite:///./biodata.db"
+    DATABASE_URL: str = Field(default="sqlite:///./biodata.db", description="Database connection URL")
     
     # API Keys
-    AGENTMAIL_API_KEY: Optional[str] = None
-    AGENTMAIL_DOMAIN: Optional[str] = None
-    AGENTMAIL_WEBHOOK_SECRET: Optional[str] = None
-    OPENAI_API_KEY: Optional[str] = None
-    ANTHROPIC_API_KEY: Optional[str] = None
+    AGENTMAIL_API_KEY: Optional[str] = Field(default=None, description="AgentMail API key")
+    AGENTMAIL_DOMAIN: Optional[str] = Field(default=None, description="AgentMail domain")
+    AGENTMAIL_WEBHOOK_SECRET: Optional[str] = Field(default=None, description="AgentMail webhook secret")
+    OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI API key")
+    ANTHROPIC_API_KEY: Optional[str] = Field(default=None, description="Anthropic API key")
     
     # Security
-    SECRET_KEY: str = "change-me-in-production"
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8080"
+    SECRET_KEY: str = Field(default="change-me-in-production", description="Secret key for security")
+    CORS_ORIGINS: str = Field(default="http://localhost:3000,http://localhost:8080", description="CORS allowed origins")
 
     def get_cors_origins(self) -> List[str]:
         """
@@ -42,13 +43,18 @@ class Settings(BaseSettings):
         return [i.strip() for i in s.split(",") if i.strip()]
     
     # Browser Service
-    BROWSER_SERVICE_URL: str = "http://browser-service:3000"
+    BROWSER_SERVICE_URL: str = Field(default="http://browser-service:3000", description="Browser service URL")
     
+    # Requester Information
+    REQUESTER_EMAIL: str = Field(default="kevin.yar@omics-os.com", description="Default requester email")
+    REQUESTER_NAME: str = Field(default="Kevin Yar", description="Default requester name")
+    REQUESTER_TITLE: str = Field(default="CEO", description="Default requester title")
+
     # Rate Limiting
-    RATE_LIMIT_PER_MINUTE: int = 60
+    RATE_LIMIT_PER_MINUTE: int = Field(default=60, description="Rate limit per minute")
 
     # Logging
-    LOG_LEVEL: str = "INFO"
+    LOG_LEVEL: str = Field(default="INFO", description="Logging level")
     
     # Pydantic v2 settings config (replaces deprecated class Config)
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

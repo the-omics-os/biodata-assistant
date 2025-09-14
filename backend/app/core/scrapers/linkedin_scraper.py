@@ -252,31 +252,31 @@ LinkedIn employee search task:
         keywords: List[str],
         max_results: int,
     ) -> List[Dict[str, Any]]:
-        """Return cancer/data-focused mock LinkedIn results for MVP/demo when scraping is unavailable."""
+        """Return generic mock LinkedIn results for MVP/demo when scraping is unavailable."""
         base = [
             {
                 "name": "Alice Johnson",
-                "job_title": "Senior Bioinformatics Scientist",
-                "department": "Genomics",
+                "job_title": "Senior Data Scientist",
+                "department": "Data",
                 "company": company,
                 "linkedin_url": None,
             },
             {
                 "name": "Bob Lee",
-                "job_title": "Oncology Data Manager",
-                "department": "Oncology",
+                "job_title": "Research Scientist",
+                "department": "Research",
                 "company": company,
                 "linkedin_url": None,
             },
             {
                 "name": "Carol Perez",
-                "job_title": "Principal Investigator, Cancer Genomics",
-                "department": "Research",
+                "job_title": "Lab Manager",
+                "department": "Laboratory",
                 "company": company,
                 "linkedin_url": None,
             },
         ]
-        # Lightweight scoring pass
+        # Lightweight scoring pass (based solely on provided keywords/departments)
         enriched = [self._generate_email_suggestions(e, company) for e in base]
         scored = [self._calculate_relevance(e, keywords, departments) for e in enriched]
         return scored[: max_results]
