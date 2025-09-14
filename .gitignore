@@ -32,8 +32,12 @@ MANIFEST
 *.manifest
 *.spec
 
-temp-profile-github
-temp-profile-linkedin
+temp-profile-github/
+temp-profile-github/*
+temp-profile-linkedin/
+temp-profile-linkedin/*
+backend/exports/*
+biodata.db
 
 # Installer logs
 pip-log.txt
