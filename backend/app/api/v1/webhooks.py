@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.models.database import OutreachRequest
 from app.models.enums import OutreachStatus
 from app.config import settings
+from app.core.services.email_monitoring_service import email_monitoring_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -196,3 +197,47 @@ def log_prov_sync(db: Session, actor: str, action: str, details: Optional[Dict[s
 async def webhook_health():
     """Health check for webhook endpoints."""
     return {"status": "healthy", "service": "webhooks"}
+
+
+@router.get("/email-monitoring/health")
+async def email_monitoring_health():
+    """Health check for email monitoring service."""
+    health_status = await email_monitoring_service.health_check()
+    return health_status
+
+
+@router.post("/email-monitoring/check")
+async def trigger_email_monitoring_check():
+    """Manually trigger an email monitoring check."""
+    result = await email_monitoring_service.manual_check()
+    return result
+
+
+@router.post("/email-monitoring/check-missed")
+async def trigger_missed_replies_check():
+    """Manually trigger a check for missed email replies."""
+    result = await email_monitoring_service.check_missed_replies()
+    return result
+
+
+@router.get("/email-monitoring/stats")
+async def get_email_monitoring_stats(
+    days: int = Query(7, ge=1, le=90, description="Number of days for statistics")
+):
+    """Get email monitoring statistics."""
+    stats = await email_monitoring_service.get_monitoring_statistics(days=days)
+    return stats
+
+
+@router.get("/email-monitoring/config")
+async def get_email_monitoring_config():
+    """Get current email monitoring configuration."""
+    config = await email_monitoring_service.configure_monitoring()
+    return config
+
+
+@router.post("/email-monitoring/test-connection")
+async def test_agentmail_connection():
+    """Test the connection to AgentMail service."""
+    result = await email_monitoring_service.test_agentmail_connection()
+    return result

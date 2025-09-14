@@ -1,150 +1,300 @@
-# Omics-OS Lead Generation System
+# Omics-OS Automated Lead Generation System
 
-AI-powered multi-agent system that automates GitHub prospecting and personalized outreach for omics-os user acquisition. It identifies struggling bioinformatics users in scanpy/anndata repositories and converts them into omics-os prospects through persona-based casual outreach.
+**Fully automated AI-powered FastAPI system** for GitHub prospecting and personalized outreach. Continuously identifies struggling bioinformatics users in scanpy/anndata repositories and converts them into omics-os prospects through automated persona-based outreach.
 
-## Key Features
+## 🚀 Key Features
 
-- GitHub issues scraping with Browser-Use
-  - Targets scverse/scanpy and scverse/anndata repositories
-  - Fast DOM navigation tuned for reliability
-  - Structured outputs via Pydantic and result.structured_output
-- Novice user detection and scoring
-  - Multi-signal scoring algorithm (account age, followers, keywords, etc.)
-  - Threshold-based lead qualification (score ≥0.6)
-  - Contact information extraction from profiles and websites
-- Persona-based casual outreach via AgentMail
-  - Transcripta Quillborne (transcriptomics specialist) for scanpy/anndata users
-  - Modular persona system expandable to other modalities
-  - Problem-specific solution examples in emails
-- Human-gated email outreach with approval workflow
-- Full provenance logging for auditability
-- Rich TUI for end-to-end GitHub prospecting demonstration
+### **Automated GitHub Prospecting**
+- **Continuous monitoring** of scverse/scanpy and scverse/anndata repositories
+- **AI-powered lead qualification** using multi-signal scoring algorithms
+- **Contact information extraction** from GitHub profiles and personal websites
+- **Structured data processing** via Pydantic and Browser-Use integration
 
-## Requirements
+### **Background Task Processing**
+- **Celery-powered background tasks** for scalable processing
+- **Scheduled daily prospecting** runs automatically
+- **Real-time email monitoring** checks for replies every 30 seconds
+- **Automated outreach queuing** with human approval gates
 
-- Python 3.10+
-- macOS/Linux recommended (Windows may work with additional setup)
-- OPENAI_API_KEY (for Browser-Use LLM)
-- Optional (only if sending emails): AGENTMAIL_API_KEY
+### **Intelligent Outreach System**
+- **Persona-based email generation** (Transcripta Quillborne for transcriptomics)
+- **AgentMail integration** for reliable email delivery
+- **Human approval workflow** with bulk operations support
+- **Full provenance logging** for complete auditability
 
-Install dependencies:
-```
-pip install -r backend/requirements.txt
-```
+### **Production-Ready REST API**
+- **FastAPI framework** with comprehensive OpenAPI documentation
+- **Lead management endpoints** for viewing and managing prospects
+- **Outreach automation APIs** with status tracking
+- **Real-time monitoring** of background services and tasks
 
-Install Chromium for Browser-Use (if needed):
-```
+## 🏗️ Architecture
+
+- **API Server**: FastAPI with async/await support
+- **Background Tasks**: Celery + Redis for distributed task processing
+- **Database**: SQLAlchemy (SQLite/PostgreSQL) with migration support
+- **Email Service**: AgentMail integration with webhook support
+- **Web Scraping**: Browser-Use with Playwright for reliable GitHub scraping
+- **AI Agents**: Pydantic AI for lead qualification and content generation
+
+## ⚡ Quick Start
+
+### 1. Install Dependencies
+```bash
+cd backend
+pip install -r requirements.txt
+
+# Install Chromium for web scraping
 uvx playwright install chromium --with-deps --no-shell
 ```
 
-## Quickstart (Interactive Demo)
+### 2. Configure Environment
+Create a `.env` file in the backend directory:
+```bash
+# Required
+OPENAI_API_KEY=your_openai_api_key_here
 
-Launch the Rich-powered TUI for GitHub prospecting:
+# Optional (for email functionality)
+AGENTMAIL_API_KEY=your_agentmail_api_key_here
+REDIS_URL=redis://localhost:6379/0
+
+# GitHub Prospecting Configuration
+GITHUB_TARGET_REPOS=scverse/scanpy,scverse/anndata
+GITHUB_MAX_ISSUES_PER_REPO=25
+GITHUB_PROSPECTING_ENABLED=true
+
+# Email Monitoring
+EMAIL_MONITORING_ENABLED=true
+EMAIL_MONITORING_INTERVAL_SECONDS=30
+
+# Automated Outreach (requires approval by default)
+AUTOMATED_OUTREACH_ENABLED=false
 ```
-cd backend && uv run python demo.py
+
+### 3. Start the System
+```bash
+# Start FastAPI server
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# In separate terminals, start background workers:
+celery -A app.core.celery_app worker --loglevel=info
+celery -A app.core.celery_app beat --loglevel=info
 ```
 
-Common flags:
+### 4. Access the System
+- **API Documentation**: http://localhost:8000/docs (Swagger UI)
+- **API Status**: http://localhost:8000/api/v1/status/detailed
+- **Health Check**: http://localhost:8000/health
+
+## 📡 API Endpoints
+
+### **Lead Management**
+```bash
+# Trigger GitHub prospecting
+POST /api/v1/leads/prospect?repos=scverse/scanpy&max_issues=25
+
+# List qualified leads
+GET /api/v1/leads?stage=enriched&has_email=true
+
+# Send outreach to specific lead
+POST /api/v1/leads/{lead_id}/outreach
+
+# Bulk outreach
+POST /api/v1/leads/outreach/bulk
 ```
-# Prospect specific repositories with visible browsers
-uv run python demo.py --repos "scverse/scanpy,scverse/anndata" --max-issues 25 --show-browser
 
-# Run in demo mode with email sending enabled
-uv run python demo.py --demo --show-browser --send-emails
+### **Outreach Management**
+```bash
+# List outreach requests
+GET /api/v1/outreach?status=sent
 
-# Adjust scoring threshold for lead qualification
-uv run python demo.py --score-threshold 0.7 --max-issues 50
+# Send outreach email
+POST /api/v1/outreach/{outreach_id}/send
+
+# Approve outreach (for approval-required emails)
+POST /api/v1/outreach/{outreach_id}/approve?approved_by=user@example.com
+
+# Bulk operations
+POST /api/v1/outreach/bulk-send
 ```
 
-## GitHub Issues Prospecting Workflow
+### **System Monitoring**
+```bash
+# Detailed system status
+GET /api/v1/status/detailed
 
-The system identifies potential omics-os users by analyzing GitHub issues in bioinformatics repositories. It focuses on users showing signs of struggle with current tools.
+# Background task status
+GET /api/v1/status/background-tasks
 
-### Prospecting Process:
-1. **Issue Scraping:** Browser-Use navigates to repository issues pages (scanpy/anndata)
-2. **Signal Extraction:** Analyzes issue titles, labels, and author profiles for novice indicators
-3. **Contact Discovery:** Extracts email addresses from GitHub profiles and personal websites
-4. **Scoring Algorithm:** Multi-factor scoring based on:
-   - Account age (<1 year = higher score)
-   - Follower count (<5 = higher score) 
-   - Repository count (<5 = higher score)
-   - Novice keywords ("help", "install", "error", "beginner")
-   - Missing code blocks in issues
-   - Question/usage labels
-5. **Lead Qualification:** Filters for score ≥0.6 and available email contact
-6. **Database Persistence:** Stores qualified leads with full signal tracking
+# Email monitoring health
+GET /api/v1/webhooks/email-monitoring/health
 
-### Persona-Based Outreach:
-- **Transcripta Quillborne:** Transcriptomics specialist for scanpy/anndata issues
-- **Smart Routing:** Automatically selects appropriate persona based on repository and issue content
-- **Tailored Messages:** Email examples specific to their exact problem (installation, data loading, plotting, etc.)
-- **Casual Tone:** "hei I saw you were struggling..." empathetic approach
+# Lead statistics
+GET /api/v1/leads/stats/summary?days=7
+```
 
-## Structured Outputs with Browser-Use
+## 🤖 Automated Workflows
 
-To make scraping robust, agents validate outputs with Pydantic and prefer `result.structured_output` when available.
+### **Daily GitHub Prospecting**
+- Runs automatically at 9 AM UTC (configurable)
+- Processes configured repositories for new issues
+- AI qualifies leads based on struggle indicators
+- Persists qualified leads to database
 
-- GitHub Issues scraping (`GitHubIssuesScraper`):
-  - Uses `output_model_schema=IssueSummaries` and consumes `result.structured_output`
-  - Normalizes into strongly-typed fields (issue_number, issue_title, user_login, labels, etc.) with resilient fallbacks
-  - Contact enrichment via profile and website scanning
+### **Continuous Email Monitoring**
+- Checks for email replies every 30 seconds
+- Updates lead and outreach status automatically
+- Processes missed replies with fallback checks
+- Logs all email activity for analytics
 
-- Lead Generation (`github_leads_agent`):
-  - Uses structured scoring and filtering pipelines
-  - Database persistence with upsert logic to prevent duplicates
-  - Full provenance logging for audit trails
+### **Intelligent Lead Scoring**
+The system uses a multi-factor scoring algorithm:
+- **Account Age**: <1 year = higher score
+- **Community Engagement**: <5 followers = higher score
+- **Repository Activity**: <5 repos = higher score
+- **Struggle Keywords**: "help", "install", "error", "beginner"
+- **Issue Quality**: Missing code blocks, question labels
+- **Contact Availability**: Email address extractable
 
-This avoids brittle string parsing and makes downstream lead management stable.
+### **Persona-Based Outreach**
+- **Transcripta Quillborne**: Transcriptomics specialist for scanpy/anndata
+- **Smart Content**: Tailored examples for specific problems
+- **Casual Tone**: Empathetic "hei I saw you were struggling..." approach
+- **Approval Gates**: Human review required for sensitive outreach
 
-## Environment Variables
+## 🔧 Configuration
 
-Required:
-- `OPENAI_API_KEY` — enables Browser-Use LLMs for GitHub scraping
+### **Environment Variables**
 
-Optional (only if sending outreach emails):
-- `AGENTMAIL_API_KEY` — for sending persona-based emails via AgentMail
-- `OMICS_OS_URL` — URL for omics-os platform (default: https://www.omics-os.com)
+**Required:**
+```bash
+OPENAI_API_KEY=your_openai_api_key_here
+```
 
-Persona Configuration (optional, defaults hardcoded):
-- Persona email addresses should be configured in AgentMail for multi-sender support
-- `transcripta@omics-os.com` for Transcripta Quillborne
-- `proteos@omics-os.com` for Proteos Maximus (future)
-- `genomus@omics-os.com` for Genomus Vitale (future)
+**Optional (Production Setup):**
+```bash
+# Background Tasks
+REDIS_URL=redis://localhost:6379/0
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
 
-## Troubleshooting
+# Database
+DATABASE_URL=postgresql://user:password@localhost/biodata_assistant
 
-- No browser window:
-  - Use `--show-browser` and ensure `settings.DEBUG` is toggled by the demo automatically
-- Chromium missing:
-  - Install via `uvx playwright install chromium --with-deps --no-shell`
-- GitHub scraping fails:
-  - System gracefully falls back to mock data for testing
-  - Check Browser-Use logs for CDP connection issues
-- No qualified leads found:
-  - Lower `--score-threshold` (try 0.4 instead of 0.6)
-  - Increase `--max-issues` per repository
-  - Check that target repositories have recent issues with struggling users
-- OPENAI_API_KEY missing:
-  - Set it in your shell or `.env` (required for GitHub scraping functionality)
-- Email sending fails:
-  - Ensure AGENTMAIL_API_KEY is set and valid
-  - Verify persona email addresses are configured in AgentMail
-  - Check network connectivity and AgentMail service status
+# Email Service
+AGENTMAIL_API_KEY=your_agentmail_api_key_here
+AGENTMAIL_WEBHOOK_SECRET=your_webhook_secret_here
 
-## Project Structure
+# Feature Flags
+ENABLE_BACKGROUND_TASKS=true
+GITHUB_PROSPECTING_ENABLED=true
+EMAIL_MONITORING_ENABLED=true
+AUTOMATED_OUTREACH_ENABLED=false  # Requires approval by default
+
+# GitHub Prospecting
+GITHUB_TARGET_REPOS=scverse/scanpy,scverse/anndata
+GITHUB_MAX_ISSUES_PER_REPO=25
+GITHUB_PROSPECTING_SCHEDULE_HOUR=9
+
+# Email Monitoring
+EMAIL_MONITORING_INTERVAL_SECONDS=30
+OUTREACH_PROCESSING_INTERVAL_MINUTES=5
+```
+
+## 🐳 Docker Deployment
+
+```bash
+# Start full system with Redis
+docker-compose up --build
+
+# Or individual services
+docker run -p 8000:8000 biodata-assistant-api
+docker run biodata-assistant-worker
+docker run biodata-assistant-beat
+```
+
+## 🔍 Monitoring & Troubleshooting
+
+### **System Health Checks**
+```bash
+# Overall system status
+curl http://localhost:8000/api/v1/status/detailed
+
+# Background tasks status
+curl http://localhost:8000/api/v1/status/background-tasks
+
+# Email monitoring health
+curl http://localhost:8000/api/v1/webhooks/email-monitoring/health
+```
+
+### **Common Issues**
+
+**No Background Workers:**
+- Start Celery worker: `celery -A app.core.celery_app worker --loglevel=info`
+- Check Redis connection: `redis-cli ping`
+
+**GitHub Scraping Fails:**
+- Install Chromium: `uvx playwright install chromium --with-deps --no-shell`
+- Check OPENAI_API_KEY is set
+- Verify target repositories are accessible
+
+**Email Issues:**
+- Verify AGENTMAIL_API_KEY is valid
+- Check email monitoring service: `GET /api/v1/webhooks/email-monitoring/health`
+- Test AgentMail connection: `POST /api/v1/webhooks/email-monitoring/test-connection`
+
+**No Leads Found:**
+- Check prospecting configuration: `GET /api/v1/status/detailed`
+- Manually trigger prospecting: `POST /api/v1/leads/prospect`
+- Review lead statistics: `GET /api/v1/leads/stats/summary`
+
+## 📁 Project Structure
 
 ```
 biodata-assistant/
 ├── backend/
-│   ├── app/                  # FastAPI app, agents, scrapers, integrations
-│   ├── tests/                # Unit and integration tests
-│   ├── requirements.txt      # Python dependencies
-│   └── demo.py               # End-to-end interactive TUI
-├── architecture.md           # System architecture and diagrams
-├── README.md                 # This file
-└── *.md                      # Additional docs
+│   ├── app/
+│   │   ├── api/v1/           # REST API endpoints
+│   │   ├── core/
+│   │   │   ├── agents/       # GitHub leads & email agents
+│   │   │   ├── tasks/        # Background task modules
+│   │   │   ├── services/     # Service layer (email monitoring)
+│   │   │   └── integrations/ # External service clients
+│   │   ├── models/           # Database models & schemas
+│   │   └── utils/            # Personas, templates, utilities
+│   ├── tests/                # Comprehensive test suite
+│   ├── requirements.txt      # Production dependencies
+│   └── demo.py               # Legacy interactive TUI (still functional)
+├── docker-compose.yml        # Production deployment
+├── Dockerfile               # Container configuration
+└── README.md                # This file
 ```
 
-## License
+## 🚀 Production Deployment
 
-See `LICENSE`.
+1. **Set up Redis**: `docker run -d -p 6379:6379 redis:alpine`
+2. **Configure environment**: Copy `.env.example` to `.env` and customize
+3. **Start API server**: `uvicorn app.main:app --host 0.0.0.0 --port 8000`
+4. **Start background workers**:
+   - `celery -A app.core.celery_app worker --loglevel=info --queues=github_prospecting,email_monitoring,outreach`
+   - `celery -A app.core.celery_app beat --loglevel=info`
+5. **Set up monitoring**: Use API endpoints or integrate with your monitoring stack
+
+## 📊 Analytics & Reporting
+
+The system provides comprehensive analytics through API endpoints:
+- **Lead statistics**: Conversion rates, source repositories, qualification metrics
+- **Outreach performance**: Send rates, reply rates, engagement tracking
+- **System health**: Task processing times, error rates, service availability
+
+## 🔒 Security & Compliance
+
+- **API key management**: Secure storage of external service credentials
+- **Human approval gates**: Required approval for automated outreach
+- **Audit logging**: Complete provenance tracking of all actions
+- **Rate limiting**: Respectful GitHub API usage and email sending limits
+- **Data privacy**: Secure handling of contact information and communications
+
+---
+
+**Need help?** Check the [API documentation](http://localhost:8000/docs) or review the comprehensive endpoint examples above.

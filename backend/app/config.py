@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_URL: str = Field(default="sqlite:///./biodata.db", description="Database connection URL")
+
+    # Redis / Background Tasks
+    REDIS_URL: Optional[str] = Field(default=None, description="Redis connection URL for Celery")
+    CELERY_BROKER_URL: Optional[str] = Field(default=None, description="Celery broker URL")
+    CELERY_RESULT_BACKEND: Optional[str] = Field(default=None, description="Celery result backend URL")
     
     # API Keys
     AGENTMAIL_API_KEY: Optional[str] = Field(default=None, description="AgentMail API key")
@@ -61,6 +66,21 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = Field(default="INFO", description="Logging level")
+
+    # Background Task Configuration
+    ENABLE_BACKGROUND_TASKS: bool = Field(default=True, description="Enable background task processing")
+    GITHUB_PROSPECTING_ENABLED: bool = Field(default=True, description="Enable automated GitHub prospecting")
+    EMAIL_MONITORING_ENABLED: bool = Field(default=True, description="Enable automated email monitoring")
+    AUTOMATED_OUTREACH_ENABLED: bool = Field(default=False, description="Enable automated outreach (requires approval)")
+
+    # GitHub Prospecting Settings
+    GITHUB_TARGET_REPOS: str = Field(default="scverse/scanpy,scverse/anndata", description="Target GitHub repositories for prospecting")
+    GITHUB_MAX_ISSUES_PER_REPO: int = Field(default=25, description="Maximum issues to fetch per repository")
+    GITHUB_PROSPECTING_SCHEDULE_HOUR: int = Field(default=9, description="Hour to run daily prospecting (UTC)")
+
+    # Email Monitoring Settings
+    EMAIL_MONITORING_INTERVAL_SECONDS: int = Field(default=30, description="Email monitoring check interval in seconds")
+    OUTREACH_PROCESSING_INTERVAL_MINUTES: int = Field(default=5, description="Outreach queue processing interval in minutes")
     
     # Pydantic v2 settings config (replaces deprecated class Config)
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
