@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, ModelRetry
 from app.core.utils.provenance import log_provenance
 from app.config import settings
+from app.core.scrapers.geo_scraper import GEOScraper
 
 # Browser-Use (Python) — MUST be used for scraping
 try:
@@ -139,19 +140,33 @@ async def _run_browser_use_task(task: str) -> List[Dict[str, Any]]:
 @bio_database_agent.tool(retries=2)
 async def search_ncbi_geo(ctx: RunContext[DatabaseSearchParams]) -> List[Dict[str, Any]]:
     """
-    Search NCBI GEO using Browser-Use.
+    Search NCBI GEO using the dedicated GEOScraper (Browser-Use under the hood).
+    Returns a list of dicts normalized for DatasetCandidate.
     """
-    task = (
-        "1. Open https://www.ncbi.nlm.nih.gov/geo/ "
-        f"2. Search for \"{ctx.deps.query}\" with cancer focus keywords (P53, TP53, TNBC, lung adenocarcinoma, breast cancer) "
-        "3. Collect top results (limit {max_results}) "
-        "4. For each, open detail page if needed and extract: accession, title, short description, "
-        "modalities (e.g. rna-seq, scrna-seq, proteomics), cancer_types, sample_size (approx), "
-        "access_type (public/request/restricted), download_url (if public), contact_info (name/email if present), page link "
-        "5. Return strictly a JSON array"
-    ).format(max_results=ctx.deps.max_results)
+    scraper = GEOScraper(headless=not bool(getattr(settings, "DEBUG", False)))
+    raw = await scraper.search_datasets(query=ctx.deps.query, max_results=ctx.deps.max_results)
 
-    results = await _run_browser_use_task(task)
+    # Normalize into DatasetCandidate-like dicts expected by downstream code
+    results: List[Dict[str, Any]] = []
+    for r in raw:
+        contact_name = r.get("contact_name")
+        contact_email = r.get("contact_email")
+        contact_info = {"name": contact_name, "email": contact_email} if (contact_name or contact_email) else None
+        results.append(
+            {
+                "accession": r.get("accession", ""),
+                "title": r.get("title", ""),
+                "description": r.get("description"),
+                "modalities": r.get("modalities", []),
+                "cancer_types": r.get("cancer_types", []),
+                "sample_size": r.get("sample_size"),
+                "access_type": r.get("access_type", "public"),
+                "download_url": r.get("download_url"),
+                "contact_info": contact_info,
+                "link": r.get("link"),
+                "relevance_score": 0.0,
+            }
+        )
 
     await log_provenance(
         actor="bio_database_agent",

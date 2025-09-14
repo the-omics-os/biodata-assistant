@@ -8,6 +8,7 @@ from pydantic_ai import Agent, RunContext, ModelRetry
 from app.config import settings
 from app.core.utils.provenance import log_provenance
 from app.utils.email_templates import generate_email_template
+from app.core.integrations.agentmail_client import AgentMailClient, EmailMessage
 
 # AgentMail SDK
 try:
@@ -100,7 +101,7 @@ def _requires_human_approval(params: EmailOutreachParams) -> bool:
 
 @email_agent.tool(retries=2)
 async def send_via_agentmail(ctx: RunContext[EmailOutreachParams], email_content: Dict[str, str]) -> Dict[str, Optional[str]]:
-    """Send email through AgentMail API."""
+    """Send email via AgentMailClient (AsyncAgentMail wrapper)."""
     if _requires_human_approval(ctx.deps):
         await log_provenance(
             actor=ctx.deps.requester_email,
@@ -109,69 +110,59 @@ async def send_via_agentmail(ctx: RunContext[EmailOutreachParams], email_content
             resource_id=ctx.deps.dataset_id,
             details={"contact": ctx.deps.contact_email},
         )
-        # Return a status that indicates approval queueing
         return {"success": False, "status": "pending_approval", "message_id": None, "thread_id": None}  # type: ignore[return-value]
 
-    if AsyncAgentMail is None or not settings.AGENTMAIL_API_KEY:
-        # No SDK or API key configured: simulate queued/sent state for dev
-        logger.warning("AgentMail SDK or API key missing; simulating send.")
-        await log_provenance(
-            actor=ctx.deps.requester_email,
-            action="outreach_simulated_send",
-            resource_type="outreach",
-            resource_id=ctx.deps.dataset_id,
-            details={"recipient": ctx.deps.contact_email, "subject": email_content.get("subject", "")},
-        )
-        return {"success": True, "status": "sent", "message_id": "dev-simulated", "thread_id": "dev-thread"}  # type: ignore[return-value]
+    client = AgentMailClient()
+    message = EmailMessage(
+        to=ctx.deps.contact_email,
+        from_email=ctx.deps.requester_email,
+        subject=email_content.get("subject", ""),
+        body=email_content.get("body", ""),
+        metadata={
+            "dataset_id": ctx.deps.dataset_id,
+            "thread_type": "data_request",
+            "requester": str(ctx.deps.requester_email),
+        },
+    )
 
-    client = AsyncAgentMail(api_key=settings.AGENTMAIL_API_KEY)
-    try:
-        resp = await client.messages.create(
-            to=str(ctx.deps.contact_email),
-            from_email=str(ctx.deps.requester_email),
-            subject=email_content.get("subject", ""),
-            body=email_content.get("body", ""),
-            metadata={
-                "dataset_id": ctx.deps.dataset_id,
-                "thread_type": "data_request",
-                "requester": str(ctx.deps.requester_email),
-            },
-        )
+    result = await client.send_email(message)
+
+    if result.get("success"):
         await log_provenance(
             actor=ctx.deps.requester_email,
             action="sent_outreach",
             resource_type="outreach",
             resource_id=ctx.deps.dataset_id,
-            details={"recipient": str(ctx.deps.contact_email), "message_id": getattr(resp, "id", None)},
+            details={"recipient": str(ctx.deps.contact_email), "message_id": result.get("message_id")},
         )
         return {
             "success": True,
             "status": "sent",
-            "message_id": getattr(resp, "id", None),
-            "thread_id": getattr(resp, "thread_id", None),
+            "message_id": result.get("message_id"),  # type: ignore[return-value]
+            "thread_id": result.get("thread_id"),  # type: ignore[return-value]
         }
-    except ApiError as e:  # type: ignore[misc]
-        # Retry on rate limiting or transient errors via ModelRetry
-        body = getattr(e, "body", "")
-        status = getattr(e, "status_code", 500)
-        await log_provenance(
-            actor=ctx.deps.requester_email,
-            action="outreach_failed",
-            resource_type="outreach",
-            resource_id=ctx.deps.dataset_id,
-            details={"recipient": str(ctx.deps.contact_email), "status_code": status, "body": str(body)},
-        )
-        if int(status) in (408, 429) or (500 <= int(status) < 600):
-            raise ModelRetry("AgentMail transient error, retrying")
-        return {"success": False, "status": "failed", "message_id": None, "thread_id": None}  # type: ignore[return-value]
-    except Exception as e:
-        await log_provenance(
-            actor=ctx.deps.requester_email,
-            action="outreach_failed",
-            resource_type="outreach",
-            resource_id=ctx.deps.dataset_id,
-            details={"recipient": str(ctx.deps.contact_email), "error": str(e)},
-        )
-        if "rate" in str(e).lower():
+
+    # Failure path with transient retry signaling
+    status_code = result.get("status_code")
+    error = result.get("error", "")
+
+    await log_provenance(
+        actor=ctx.deps.requester_email,
+        action="outreach_failed",
+        resource_type="outreach",
+        resource_id=ctx.deps.dataset_id,
+        details={"recipient": str(ctx.deps.contact_email), "status_code": status_code, "error": str(error)},
+    )
+
+    try:
+        if status_code is not None:
+            sc = int(status_code)
+            if sc in (408, 429) or (500 <= sc < 600):
+                raise ModelRetry("AgentMail transient error, retrying")
+        if "rate" in str(error).lower():
             raise ModelRetry("Rate limited, will retry")
-        return {"success": False, "status": "failed", "message_id": None, "thread_id": None}  # type: ignore[return-value]
+    except Exception:
+        # If conversion fails, ignore and return failed
+        pass
+
+    return {"success": False, "status": "failed", "message_id": None, "thread_id": None}  # type: ignore[return-value]

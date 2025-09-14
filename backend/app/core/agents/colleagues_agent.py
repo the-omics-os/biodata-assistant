@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, EmailStr, Field
 from pydantic_ai import Agent, RunContext
 from app.core.utils.provenance import log_provenance
+from app.config import settings
 
 # Browser-Use (Python) — MUST be used for LinkedIn search
 try:
@@ -118,18 +119,19 @@ async def _run_browser_use_task(task: str) -> List[Dict[str, Any]]:
 @colleagues_agent.tool
 async def search_linkedin_employees(ctx: RunContext[ColleagueSearchParams]) -> List[Dict[str, Any]]:
     """
-    Search company employees on LinkedIn via Browser-Use, returning raw dicts.
+    Search company employees on LinkedIn using LinkedInScraper (Browser-Use under the hood).
     """
+    from app.core.scrapers.linkedin_scraper import LinkedInScraper
+
+    scraper = LinkedInScraper(headless=not bool(getattr(settings, "DEBUG", False)))
     kw = list({*(ctx.deps.keywords or []), "cancer", "genomics", "data"})
-    task = (
-        "1. Open https://www.linkedin.com/ "
-        f"2. Search employees at \"{ctx.deps.company}\" "
-        f"3. Filter by departments {ctx.deps.departments} and keywords {kw} "
-        "4. Collect top profiles: name, job_title, department (if visible), profile URL, infer email if visible or leave null "
-        "5. Score relevance 0–1 based on oncology/bioinformatics/data ownership "
-        "6. Return strictly a JSON array"
+    results = await scraper.find_company_employees(
+        company=ctx.deps.company,
+        departments=ctx.deps.departments,
+        keywords=kw,
+        max_results=10,
     )
-    results = await _run_browser_use_task(task)
+
     await log_provenance(
         actor="colleagues_agent",
         action="searched_linkedin",

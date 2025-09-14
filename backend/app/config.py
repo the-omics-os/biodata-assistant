@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # API Keys
     AGENTMAIL_API_KEY: Optional[str] = None
     AGENTMAIL_DOMAIN: Optional[str] = None
+    AGENTMAIL_WEBHOOK_SECRET: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
     
