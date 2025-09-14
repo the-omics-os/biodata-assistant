@@ -23,6 +23,7 @@ class BasicIssue(BaseModel):
     """Basic GitHub issue data from issues list page"""
     issue_number: str
     issue_title: str
+    issue_body: str
     issue_url: str
     user_login: str
 
@@ -81,7 +82,7 @@ class GitHubIssuesScraper:
                     wait_between_actions=0.1,
                     headless=self.headless,
                     keep_alive=False,
-                    timeout=300
+                    timeout=600
                 )
             except Exception:
                 self.browser_profile = None
@@ -102,7 +103,7 @@ class GitHubIssuesScraper:
                 logger.warning(f"Failed to initialize Browser: {e}")
                 self.browser = None
 
-    async def fetch_issue_list(self, repo: str, max_issues: int = 25, profile_enrichment: str = "simple") -> List[Dict[str, Any]]:
+    async def fetch_issue_list(self, repo: str, max_issues: int = 25, profile_enrichment: str = "browser") -> List[Dict[str, Any]]:
         """
         Fetch a list of GitHub issues from the specified repository.
         
@@ -147,6 +148,7 @@ class GitHubIssuesScraper:
 For each issue, extract:
 - issue_number (the #number like #1234)
 - issue_title (the main title text)
+- issue_body (the main description text if visible on list)
 - issue_url (full URL to the individual issue)
 - user_login (author username who created the issue)
 

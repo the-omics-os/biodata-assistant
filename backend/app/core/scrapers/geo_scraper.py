@@ -60,7 +60,7 @@ class GEOScraper:
         if BrowserProfile is not None:
             try:
                 self.browser_profile = BrowserProfile(
-                    minimum_wait_page_load_time=0.3,
+                    minimum_wait_page_load_time=0.1,
                     wait_between_actions=0.1,
                     headless=self.headless,
                     keep_alive=False,

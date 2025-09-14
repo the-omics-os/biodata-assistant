@@ -41,7 +41,18 @@ class AgentMailClient:
 
     def __init__(self, timeout: float = 30.0) -> None:
         api_key = settings.AGENTMAIL_API_KEY or ""
-        self.enabled = bool(api_key and AsyncAgentMail is not None)
+        
+        # Check for specific issues
+        self.sdk_available = AsyncAgentMail is not None
+        self.api_key_present = bool(api_key)
+        self.enabled = self.api_key_present and self.sdk_available
+        
+        # Store reason for being disabled for better error messages
+        self.disabled_reason = None
+        if not self.sdk_available:
+            self.disabled_reason = "AgentMail SDK not installed (pip install agentmail)"
+        elif not self.api_key_present:
+            self.disabled_reason = "AGENTMAIL_API_KEY not set in .env file"
 
         self.client = None
         self.sync_client = None
@@ -52,6 +63,7 @@ class AgentMailClient:
                 logger.warning(f"Failed to initialize AsyncAgentMail: {e}")
                 self.client = None
                 self.enabled = False
+                self.disabled_reason = f"AgentMail client initialization failed: {e}"
 
             try:
                 if AgentMail is not None:
@@ -62,8 +74,8 @@ class AgentMailClient:
 
     async def send_email(self, message: EmailMessage, max_retries: int = 2) -> Dict[str, Any]:
         """
-        Send email with retry logic.
-        If SDK/API key not available, simulate a successful send for MVP demos.
+        Send email using AgentMail's official API structure.
+        Uses client.inboxes.messages.send() as per official documentation.
         """
         if not self.enabled or self.client is None:
             logger.warning("AgentMail SDK disabled or API key missing; simulating send.")
@@ -77,29 +89,28 @@ class AgentMailClient:
             return {
                 "success": True,
                 "message_id": "simulated-message-id",
-                "thread_id": "simulated-thread-id",
+                "thread_id": "simulated-thread-id", 
                 "status": "sent",
                 "headers": {},
             }
 
         try:
-            # Prefer raw response to access headers + structured data
-            with_raw = self.client.messages.with_raw_response  # type: ignore[attr-defined]
-            response = await with_raw.create(  # type: ignore[call-arg]
+            # Use the official API structure: client.inboxes.messages.send()
+            # inbox_id is the from_email address for AgentMail
+            sent_message = await self.client.inboxes.messages.send(  # type: ignore[union-attr]
+                inbox_id=str(message.from_email),
                 to=str(message.to),
-                from_email=str(message.from_email),
                 subject=message.subject,
-                body=message.body,
-                metadata=message.metadata,
-                attachments=message.attachments or None,
-                request_options={"max_retries": max_retries, "timeout_in_seconds": 20},
+                text=message.body,  # Use text parameter for plain text
+                html=message.body,  # Also provide as HTML (AgentMail can handle both)
+                labels=[
+                    message.metadata.get("thread_type", "outreach"),
+                    message.metadata.get("persona", "agent"),
+                ] if message.metadata else ["outreach", "agent"],
             )
 
-            headers = dict(getattr(response, "headers", {}) or {})
-            data = getattr(response, "data", None)
-
-            msg_id = getattr(data, "id", None)
-            thread_id = getattr(data, "thread_id", None)
+            # Extract message ID from response
+            msg_id = getattr(sent_message, "message_id", None)
 
             await self._log_provenance(
                 action="email_sent",
@@ -107,16 +118,15 @@ class AgentMailClient:
                     "to": str(message.to),
                     "subject": message.subject,
                     "message_id": msg_id,
-                    "thread_id": thread_id,
                 },
             )
 
             return {
                 "success": True,
                 "message_id": msg_id,
-                "thread_id": thread_id,
+                "thread_id": None,  # AgentMail doesn't return thread_id in this API
                 "status": "sent",
-                "headers": headers,
+                "headers": {},
             }
 
         except ApiError as e:  # type: ignore[misc]

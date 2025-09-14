@@ -144,27 +144,20 @@ lead_qualification_agent = Agent[LeadQualificationInput, LeadQualificationResult
     deps_type=LeadQualificationInput,
     output_type=LeadQualificationResult,
     instructions=(
-        "You are an expert at identifying struggling bioinformatics users who would benefit from omics-os.\n"
+        "You are an expert at identifying struggling bioinformatics users who would benefit from omics-os a no-code bioinformatics tool.\n"
         "Analyze GitHub issues to determine if the user is:\n"
         "1. Struggling with bioinformatics tools (ScanPy, AnnData, MuData, BioPython)\n"
         "2. Showing signs of being a beginner or having difficulties\n"
         "3. Would benefit from a no-code solution like omics-os\n\n"
-        "Look for:\n"
-        "- Installation/setup problems\n"
-        "- Basic usage questions\n"
-        "- Expressions of frustration\n"
-        "- Beginner-level questions\n"
-        "- Error messages and stack traces\n"
-        "- Requests for help with fundamental concepts\n\n"
         "Prioritize:\n"
         "- HIGH: Clear struggle with basic tasks, installation issues, beginner questions\n"
         "- MEDIUM: General usage questions, moderate difficulty\n"
         "- LOW: Advanced users with complex technical questions\n\n"
         "Do NOT contact:\n"
         "- Advanced users asking sophisticated questions\n"
-        "- Bug reports from experienced developers\n"
         "- Feature requests from power users\n"
-        "- Issues that show deep technical knowledge\n"
+        "- Issues that show deep technical knowledge\n",
+        "- Generally accept everybody\n"
     ),
 )
 
@@ -207,7 +200,12 @@ async def _qualify_lead_with_ai(issue: Dict[str, Any], repo: str, max_retries: i
                 "Analyze this GitHub issue and determine if the user would benefit from omics-os",
                 deps=qualification_input
             )
-            qualification = result.output
+            ####################
+            # qualification = result.output
+            from types import SimpleNamespace
+            result = SimpleNamespace(dict(should_contact=True, priority="HIGH", confidence=0.75, reason="Demo Reason"))
+            qualification = result
+            ####################
             
             await log_provenance(
                 actor="lead_qualification_agent",

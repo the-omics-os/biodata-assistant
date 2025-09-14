@@ -1,0 +1,12 @@
+[
+  {
+    "success": true,
+    "status": "sent",
+    "message_id": "simulated-message-id",
+    "thread_id": "simulated-thread-id",
+    "error_message": null,
+    "lead_user": "proteomaximus",
+    "lead_repo": "scverse/scanpy",
+    "persona_used": "Transcripta Quillborne"
+  }
+]

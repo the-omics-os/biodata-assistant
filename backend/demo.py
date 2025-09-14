@@ -49,7 +49,6 @@ load_dotenv()
 # Backend imports
 from app.config import settings
 from app.core.agents.github_leads_agent import prospect_github_issues
-from app.core.agents.email_agent import send_product_invite_direct, ProductInviteParams
 from app.utils.personas import select_persona
 from app.core.utils.provenance import log_provenance
 from app.core.database import init_db
@@ -230,11 +229,43 @@ def select_leads_for_outreach(leads: List[Dict[str, Any]]) -> List[Dict[str, Any
     return [leads[i - 1] for i in selected]
 
 
-async def send_outreach_for_leads(leads: List[Dict[str, Any]], style: str = "casual") -> List[Dict[str, Any]]:
-    """Send persona-based outreach emails for selected leads."""
+async def send_outreach_for_leads(
+    leads: List[Dict[str, Any]], 
+    templates: Optional[List[Dict[str, Any]]] = None,
+    style: str = "casual"
+) -> List[Dict[str, Any]]:
+    """
+    Send persona-based outreach emails using direct AgentMail client.
+    
+    Args:
+        leads: List of lead dictionaries with user information
+        templates: Optional list of pre-generated templates (one per lead)
+        style: Email style (default "casual")
+    """
     results: List[Dict[str, Any]] = []
     
-    for lead in leads:
+    # Use direct AgentMail client (simple approach)
+    try:
+        from agentmail import AgentMail
+    except ImportError:
+        console.print("[red]❌ AgentMail not installed. Run: pip install agentmail[/red]")
+        return results
+    
+    # Get API key
+    api_key = settings.AGENTMAIL_API_KEY
+    if not api_key:
+        console.print("[red]❌ AGENTMAIL_API_KEY not set in .env file[/red]")
+        return results
+    
+    # Create simple AgentMail client
+    client = AgentMail(api_key=api_key)
+    console.print("[green]✅ AgentMail client initialized[/green]")
+    
+    # Use hardcoded existing inbox
+    inbox_id = "transcripta@agentmail.to"  # Your existing inbox ID
+    console.print(f"[green]✅ Using inbox: {inbox_id}[/green]")
+    
+    for idx, lead in enumerate(leads):
         try:
             # Select appropriate persona for this lead
             persona = select_persona(lead)
@@ -245,35 +276,89 @@ async def send_outreach_for_leads(leads: List[Dict[str, Any]], style: str = "cas
                 # Capitalize first letter for friendlier tone
                 recipient_name = recipient_name.replace("_", " ").replace("-", " ").title()
             
-            # Prepare outreach parameters
-            params = ProductInviteParams(
-                lead_id=str(lead.get("issue_url", "")),
-                repo=lead.get("repo", ""),
-                issue_title=lead.get("issue_title", ""),
-                recipient_name=recipient_name,
-                recipient_email=lead.get("email", ""),
-                persona_name=persona.name,
-                persona_title=persona.title,
-                persona_from_email=persona.from_email,
-                message_style=style,
+            # Use pre-generated template if available, otherwise generate new one
+            if templates and idx < len(templates):
+                template = templates[idx]
+            else:
+                # Generate template if not provided
+                template = generate_email_template(
+                    template_type="product_invite",
+                    persona_name=persona.name,
+                    persona_title=persona.title,
+                    repo=lead.get("repo", ""),
+                    issue_title=lead.get("issue_title", ""),
+                    recipient_name=recipient_name,
+                    message_style=style,
+                )
+            
+            console.print(f"[cyan]Sending email to {lead.get('user_login')} ({lead.get('email')})...[/cyan]")
+            
+            # Send using official AgentMail API structure with the created/existing inbox
+            sent_message = client.inboxes.messages.send(
+                inbox_id=inbox_id,  # Use the created or existing inbox
+                to=lead.get("email", ""),
+                subject=template.get("subject", ""),
+                text=template.get("body", ""),  # Plain text version
+                html=template.get("body", ""),  # HTML version (same content)
+                labels=["outreach", "product_invite", persona.name.lower()]
             )
             
-            # Send the email
-            result = await send_product_invite_direct(params)
-            result["lead_user"] = lead.get("user_login")
-            result["lead_repo"] = lead.get("repo")
-            result["persona_used"] = persona.name
+            # Extract message ID
+            message_id = getattr(sent_message, 'message_id', None)
+            
+            result = {
+                "success": True,
+                "status": "sent",
+                "message_id": message_id,
+                "lead_user": lead.get("user_login"),
+                "lead_repo": lead.get("repo"),
+                "persona_used": persona.name,
+            }
+            
+            console.print(f"[green]✅ Email sent to {lead.get('user_login')} - Message ID: {message_id}[/green]")
+            
+            # Log provenance
+            await log_provenance(
+                actor=persona.from_email,
+                action="sent_product_invite",
+                resource_type="lead",
+                resource_id=str(lead.get("issue_url", "")),
+                details={
+                    "recipient": lead.get("email", ""),
+                    "message_id": message_id,
+                    "persona": persona.name
+                },
+            )
+            
             results.append(result)
             
         except Exception as e:
+            error_msg = str(e)
+            console.print(f"[red]❌ Failed to send email to {lead.get('user_login')}: {error_msg}[/red]")
             logger.error(f"Failed to send outreach to {lead.get('user_login')}: {e}")
-            results.append({
+            
+            result = {
                 "success": False,
                 "status": "failed",
-                "error_message": str(e),
+                "error_message": error_msg,
                 "lead_user": lead.get("user_login"),
                 "lead_repo": lead.get("repo"),
-            })
+                "persona_used": getattr(select_persona(lead), 'name', 'unknown'),
+            }
+            
+            # Log failed provenance
+            await log_provenance(
+                actor=getattr(select_persona(lead), 'from_email', 'unknown'),
+                action="product_invite_failed",
+                resource_type="lead",
+                resource_id=str(lead.get("issue_url", "")),
+                details={
+                    "recipient": lead.get("email", ""),
+                    "error": error_msg
+                },
+            )
+            
+            results.append(result)
     
     return results
 
@@ -417,8 +502,11 @@ async def main() -> None:
         console.print("\n[bold cyan]📧 Omics-OS Outreach Preparation[/bold cyan]")
         console.print("Persona-based emails will be composed and sent via AgentMail with provenance logging.")
         
-        # Preview emails before sending
-        if not args.demo and Confirm.ask("Preview outreach emails before sending?", default=True):
+        # Generate and preview templates
+        confirmed_templates: List[Dict[str, Any]] = []
+        preview_emails = Confirm.ask("Preview outreach emails before sending?", default=True)
+        
+        if preview_emails:
             for lead in selected_leads:
                 persona = select_persona(lead)
                 recipient_name = lead.get("user_login", "there").replace("_", " ").replace("-", " ").title()
@@ -430,7 +518,12 @@ async def main() -> None:
                     repo=lead.get("repo", ""),
                     issue_title=lead.get("issue_title", ""),
                     recipient_name=recipient_name,
+                    message_style="casual",
                 )
+                
+                # Store the generated template for later use
+                confirmed_templates.append(tpl)
+                
                 body_preview = (tpl.get("body","")[:400] + ("..." if len(tpl.get("body",""))>400 else ""))
                 console.print(Panel.fit(
                     f"Subject: {tpl.get('subject','')}\n\nFrom: {persona.name} <{persona.from_email}>\n\n{body_preview}", 
@@ -450,7 +543,13 @@ async def main() -> None:
                 else:
                     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console) as progress:
                         email_tk = progress.add_task("[cyan]Sending persona-based outreach emails...", total=None)
-                        outreach_results = await send_outreach_for_leads(selected_leads, style="casual")
+                        # Pass the confirmed templates if they were generated during preview
+                        templates_to_use = confirmed_templates if preview_emails else None
+                        outreach_results = await send_outreach_for_leads(
+                            selected_leads, 
+                            templates=templates_to_use,
+                            style="casual"
+                        )
                         progress.update(email_tk, description=f"[green]✓ Emails sent: {len(outreach_results)}", completed=True)
                     
                     # Render outreach results

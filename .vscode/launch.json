@@ -14,7 +14,7 @@
             "args": [
                 "--show-browser",
                 "--max-issues",
-                "3",
+                "1",
                 "--demo"
             ]
         }

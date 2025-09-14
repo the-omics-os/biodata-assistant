@@ -1,0 +1,2 @@
+user,repo,persona,status,message_id,error
+proteomaximus,scverse/scanpy,Transcripta Quillborne,failed,,"headers: {'content-type': 'application/json', 'content-length': '52', 'connection': 'keep-alive', 'date': 'Sun, 14 Sep 2025 18:38:49 GMT', 'apigw-requestid': 'Q57E7jjToAMEYwg=', 'x-cache': 'Error from cloudfront', 'via': '1.1 60e55687f4f0ad988a569a499b543a0e.cloudfront.net (CloudFront)', 'x-amz-cf-pop': 'SFO53-P5', 'x-amz-cf-id': 'DGBNuz7HhOLCt5KzonvWG3EBz4DN_wxUnx2BxrnSuHk0NfmZ043WcQ=='}, status_code: 404, body: name='NotFoundError' message='Inbox not found'"
