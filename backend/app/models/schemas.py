@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
-from app.models.enums import DatasetSource, AccessType, OutreachStatus, TaskStatus, TaskType
+from app.models.enums import DatasetSource, AccessType, OutreachStatus, TaskStatus, TaskType, LeadStage
 
 class DatasetCreate(BaseModel):
     source: DatasetSource
@@ -106,3 +106,29 @@ class ErrorResponse(BaseModel):
     detail: str
     error_code: Optional[str] = None
     timestamp: datetime
+
+
+class LeadCreate(BaseModel):
+    source: Literal["github-issues"] = "github-issues"
+    repo: str
+    issue_number: int
+    issue_url: str
+    issue_title: str
+    issue_labels: List[str] = []
+    issue_created_at: Optional[datetime] = None
+    user_login: str
+    profile_url: str
+    email: Optional[EmailStr] = None
+    website: Optional[str] = None
+    signals: Dict[str, Any] = {}
+    novice_score: float = Field(ge=0, le=1, default=0.0)
+    stage: LeadStage = LeadStage.NEW
+
+
+class LeadResponse(LeadCreate):
+    id: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

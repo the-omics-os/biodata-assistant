@@ -44,10 +44,10 @@ class DatasetCandidate(BaseModel):
     relevance_score: float = Field(default=0.0, ge=0, le=1)
 
 
-model = BedrockConverseModel( "us.anthropic.claude-sonnet-4-20250514-v1:0")
+# model = BedrockConverseModel('anthropic.claude-sonnet-4-20250514-v1:0')
 
 bio_database_agent = Agent[DatabaseSearchParams, List[DatasetCandidate]](
-    model,
+    'openai:gpt-4.1',
     deps_type=DatabaseSearchParams,
     output_type=List[DatasetCandidate],
     instructions=(

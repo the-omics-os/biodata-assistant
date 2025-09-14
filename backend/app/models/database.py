@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, JSON, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, JSON, ForeignKey, Text, Float
 from sqlalchemy.sql import func
 from app.core.database import Base
 import uuid
@@ -85,5 +85,27 @@ class Task(Base):
     error_message = Column(Text)
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+
+
+class Lead(Base):
+    __tablename__ = "leads"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    source = Column(String, nullable=False, default="github-issues")  # 'github-issues'
+    repo = Column(String, nullable=False)  # 'scverse/scanpy' | 'scverse/anndata'
+    issue_number = Column(Integer, nullable=False)
+    issue_url = Column(String, nullable=False, unique=True, index=True)
+    issue_title = Column(String, nullable=False)
+    issue_labels = Column(JSON, default=lambda: [])  # List of strings
+    issue_created_at = Column(DateTime, nullable=True)
+    user_login = Column(String, nullable=False)
+    profile_url = Column(String, nullable=False)
+    email = Column(String, nullable=True)
+    website = Column(String, nullable=True)
+    signals = Column(JSON, default=lambda: {})  # Scoring signals dict
+    novice_score = Column(Float, nullable=False, default=0.0)  # 0.0 to 1.0
+    stage = Column(String, nullable=False, default="new")  # LeadStage values
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())

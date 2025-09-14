@@ -29,7 +29,7 @@ class WorkflowPlan(BaseModel):
 model = BedrockConverseModel( "us.anthropic.claude-sonnet-4-20250514-v1:0")
 
 planner_agent = Agent[SearchRequest, WorkflowPlan](
-    model,
+    'openai:gpt-4.1',
     deps_type=SearchRequest,
     output_type=WorkflowPlan,
     instructions=(

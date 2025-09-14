@@ -49,10 +49,10 @@ class Contact(BaseModel):
 class Contacts(BaseModel):
     items: List[Contact]
 
-model = BedrockConverseModel( "us.anthropic.claude-sonnet-4-20250514-v1:0")
+# model = BedrockConverseModel( "us.anthropic.claude-sonnet-4-20250514-v1:0")
 
 colleagues_agent = Agent[ColleagueSearchParams, List[InternalContact]](
-    model,
+    'openai:gpt-4.1',
     deps_type=ColleagueSearchParams,
     output_type=List[InternalContact],
     instructions=(

@@ -29,3 +29,12 @@ class TaskType(str, Enum):
     SEARCH = "search"
     FIND_CONTACT = "find_contact"
     SEND_EMAIL = "send_email"
+
+
+class LeadStage(str, Enum):
+    NEW = "new"
+    ENRICHED = "enriched"
+    SELECTED = "selected"
+    EMAILED = "emailed"
+    RESPONDED = "responded"
+    DISQUALIFIED = "disqualified"

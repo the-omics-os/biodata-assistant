@@ -1,18 +1,24 @@
-# Biodata Assistant
+# Omics-OS Lead Generation System
 
-AI-powered multi-agent system that automates cancer research data discovery and outreach. It reduces dataset triage from days to minutes by orchestrating live web scraping (GEO, LinkedIn), colleague discovery, and human-gated outreach.
+AI-powered multi-agent system that automates GitHub prospecting and personalized outreach for omics-os user acquisition. It identifies struggling bioinformatics users in scanpy/anndata repositories and converts them into omics-os prospects through persona-based casual outreach.
 
 ## Key Features
 
-- Live GEO scraping with Browser-Use
+- GitHub issues scraping with Browser-Use
+  - Targets scverse/scanpy and scverse/anndata repositories
   - Fast DOM navigation tuned for reliability
   - Structured outputs via Pydantic and result.structured_output
-- LinkedIn colleague discovery
-  - Manual Login workflow (human-in-the-loop, no credential entry by the agent)
-  - Public search fallback when a logged-in session is unavailable
-- Human-gated email outreach via AgentMail (optional)
+- Novice user detection and scoring
+  - Multi-signal scoring algorithm (account age, followers, keywords, etc.)
+  - Threshold-based lead qualification (score ≥0.6)
+  - Contact information extraction from profiles and websites
+- Persona-based casual outreach via AgentMail
+  - Transcripta Quillborne (transcriptomics specialist) for scanpy/anndata users
+  - Modular persona system expandable to other modalities
+  - Problem-specific solution examples in emails
+- Human-gated email outreach with approval workflow
 - Full provenance logging for auditability
-- Rich TUI for end-to-end demonstration
+- Rich TUI for end-to-end GitHub prospecting demonstration
 
 ## Requirements
 
@@ -33,65 +39,77 @@ uvx playwright install chromium --with-deps --no-shell
 
 ## Quickstart (Interactive Demo)
 
-Launch the Rich-powered TUI:
+Launch the Rich-powered TUI for GitHub prospecting:
 ```
-python backend/demo.py
+cd backend && uv run python demo.py
 ```
 
 Common flags:
 ```
-# Include LinkedIn search and show live browsers
-python backend/demo.py --include-internal --show-browser
+# Prospect specific repositories with visible browsers
+uv run python demo.py --repos "scverse/scanpy,scverse/anndata" --max-issues 25 --show-browser
 
-# Provide a research query and enable visible browsers
-python backend/demo.py --query "TP53 lung adenocarcinoma RNA-seq" --max-results 3 --show-browser
+# Run in demo mode with email sending enabled
+uv run python demo.py --demo --show-browser --send-emails
+
+# Adjust scoring threshold for lead qualification
+uv run python demo.py --score-threshold 0.7 --max-issues 50
 ```
 
-## Manual LinkedIn Login Workflow (Human-in-the-Loop)
+## GitHub Issues Prospecting Workflow
 
-This repository uses a human-in-the-loop sign-in for LinkedIn. The agent will never type your credentials.
+The system identifies potential omics-os users by analyzing GitHub issues in bioinformatics repositories. It focuses on users showing signs of struggle with current tools.
 
-Workflow:
-1. The demo opens a persistent browser on https://www.linkedin.com/login.
-2. You log in manually in the visible browser window.
-3. In the TUI, press Enter to confirm you are signed in (keep the browser open).
-4. The agent continues with the same session for company employee discovery.
-5. If session reuse fails, the system falls back to public search automatically.
+### Prospecting Process:
+1. **Issue Scraping:** Browser-Use navigates to repository issues pages (scanpy/anndata)
+2. **Signal Extraction:** Analyzes issue titles, labels, and author profiles for novice indicators
+3. **Contact Discovery:** Extracts email addresses from GitHub profiles and personal websites
+4. **Scoring Algorithm:** Multi-factor scoring based on:
+   - Account age (<1 year = higher score)
+   - Follower count (<5 = higher score) 
+   - Repository count (<5 = higher score)
+   - Novice keywords ("help", "install", "error", "beginner")
+   - Missing code blocks in issues
+   - Question/usage labels
+5. **Lead Qualification:** Filters for score ≥0.6 and available email contact
+6. **Database Persistence:** Stores qualified leads with full signal tracking
 
-Technical notes:
-- The LinkedIn scraper uses a persistent user data directory at `./temp-profile-linkedin` so cookies survive across steps.
-- Entry points:
-  - `colleagues_agent.start_linkedin_login_session()` opens the login page and keeps the browser alive.
-  - `colleagues_agent.search_linkedin_direct(..., use_existing_session=True)` reuses your logged-in session to extract contacts.
-- Outreach flows that send connection requests/messages still require logged-in state and will be guarded.
+### Persona-Based Outreach:
+- **Transcripta Quillborne:** Transcriptomics specialist for scanpy/anndata issues
+- **Smart Routing:** Automatically selects appropriate persona based on repository and issue content
+- **Tailored Messages:** Email examples specific to their exact problem (installation, data loading, plotting, etc.)
+- **Casual Tone:** "hei I saw you were struggling..." empathetic approach
 
 ## Structured Outputs with Browser-Use
 
 To make scraping robust, agents validate outputs with Pydantic and prefer `result.structured_output` when available.
 
-- GEO scraping (`GEOScraper`):
-  - Uses `output_model_schema=GEODatasets` and consumes `result.structured_output`.
-  - Normalizes into strongly-typed fields (accession, title, organism, modalities, sample_size, etc.) with resilient fallbacks.
+- GitHub Issues scraping (`GitHubIssuesScraper`):
+  - Uses `output_model_schema=IssueSummaries` and consumes `result.structured_output`
+  - Normalizes into strongly-typed fields (issue_number, issue_title, user_login, labels, etc.) with resilient fallbacks
+  - Contact enrichment via profile and website scanning
 
-- Colleagues agent (LinkedIn public browsing utility path):
-  - Uses `output_model_schema=Contacts` for Browser-Use helper agents.
-  - For deterministic direct search, returns normalized JSON in Python without free-form parsing.
+- Lead Generation (`github_leads_agent`):
+  - Uses structured scoring and filtering pipelines
+  - Database persistence with upsert logic to prevent duplicates
+  - Full provenance logging for audit trails
 
-This avoids brittle string parsing and makes downstream filtering and export stable.
+This avoids brittle string parsing and makes downstream lead management stable.
 
 ## Environment Variables
 
 Required:
-- `OPENAI_API_KEY` — enables Browser-Use LLMs
+- `OPENAI_API_KEY` — enables Browser-Use LLMs for GitHub scraping
 
-Optional (only if using outreach or agentic login fallback):
-- `AGENTMAIL_API_KEY` — for sending emails via AgentMail
-- `LINKEDIN_COMPANY_URL` — the company page to navigate to employees when logged in
-- `LINKEDIN_EMAIL`, `LINKEDIN_PW` — not required for manual login; only used by explicit outreach/agentic flows
+Optional (only if sending outreach emails):
+- `AGENTMAIL_API_KEY` — for sending persona-based emails via AgentMail
+- `OMICS_OS_URL` — URL for omics-os platform (default: https://www.omics-os.com)
 
-Convenience (TUI defaults):
-- `REQUESTER_NAME`, `REQUESTER_EMAIL`, `REQUESTER_TITLE`
-- `COMPANY_NAME`
+Persona Configuration (optional, defaults hardcoded):
+- Persona email addresses should be configured in AgentMail for multi-sender support
+- `transcripta@omics-os.com` for Transcripta Quillborne
+- `proteos@omics-os.com` for Proteos Maximus (future)
+- `genomus@omics-os.com` for Genomus Vitale (future)
 
 ## Troubleshooting
 
@@ -99,10 +117,19 @@ Convenience (TUI defaults):
   - Use `--show-browser` and ensure `settings.DEBUG` is toggled by the demo automatically
 - Chromium missing:
   - Install via `uvx playwright install chromium --with-deps --no-shell`
-- LinkedIn anti-bot friction:
-  - Use manual login as recommended (the default), or proceed with public search fallback
+- GitHub scraping fails:
+  - System gracefully falls back to mock data for testing
+  - Check Browser-Use logs for CDP connection issues
+- No qualified leads found:
+  - Lower `--score-threshold` (try 0.4 instead of 0.6)
+  - Increase `--max-issues` per repository
+  - Check that target repositories have recent issues with struggling users
 - OPENAI_API_KEY missing:
-  - Set it in your shell or `.env` (the TUI will warn and can continue in reduced functionality)
+  - Set it in your shell or `.env` (required for GitHub scraping functionality)
+- Email sending fails:
+  - Ensure AGENTMAIL_API_KEY is set and valid
+  - Verify persona email addresses are configured in AgentMail
+  - Check network connectivity and AgentMail service status
 
 ## Project Structure
 

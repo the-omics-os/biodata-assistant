@@ -12,9 +12,10 @@
                 "PYDEVD_WARN_EVALUATION_TIMEOUT": "500"
             },
             "args": [
-                "--include-internal",
                 "--show-browser",
-                "--send-emails"
+                "--max-issues",
+                "3",
+                "--demo"
             ]
         }
     ]

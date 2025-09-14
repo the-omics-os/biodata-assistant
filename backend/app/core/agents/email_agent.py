@@ -42,10 +42,23 @@ class EmailResult(BaseModel):
     requires_approval: bool = False
     error_message: Optional[str] = None
 
+
+class ProductInviteParams(BaseModel):
+    lead_id: str
+    repo: str
+    issue_title: str
+    recipient_name: str
+    recipient_email: EmailStr
+    persona_name: str
+    persona_title: str
+    persona_from_email: EmailStr
+    message_style: str = "casual"
+    omics_os_url: str = "https://www.omics-os.com"
+
 model =BedrockConverseModel( "us.anthropic.claude-sonnet-4-20250514-v1:0")
 
 email_agent = Agent[EmailOutreachParams, EmailResult](
-    model,
+    'openai:gpt-4.1',
     deps_type=EmailOutreachParams,
     output_type=EmailResult,
     instructions=(
@@ -246,6 +259,177 @@ async def send_outreach_direct(params: EmailOutreachParams) -> Dict[str, Optiona
         resource_type="outreach",
         resource_id=params.dataset_id,
         details={"recipient": str(params.contact_email), "status_code": result.get("status_code"), "error": str(result.get("error"))},
+    )
+    return {
+        "success": False,
+        "status": "failed",
+        "message_id": None,
+        "thread_id": None,
+        "error_message": str(result.get("error")) if result.get("error") else None,
+    }
+
+
+# Create a separate agent for product invitations
+product_invite_agent = Agent[ProductInviteParams, EmailResult](
+    model,
+    deps_type=ProductInviteParams,
+    output_type=EmailResult,
+    instructions=(
+        "You are a casual, empathetic outreach specialist for omics-os.\n"
+        "You help struggling bioinformatics users discover our no-code solution.\n"
+        "Your tone is:\n"
+        "- Casual and friendly ('hei!', emojis)\n"
+        "- Empathetic (acknowledge their struggle)\n"
+        "- Helpful without being pushy\n"
+        "- Technical but approachable\n\n"
+        "Always maintain the casual, helpful persona matching the 'hei I saw you were struggling...' style.\n"
+    ),
+)
+
+
+@product_invite_agent.tool
+async def compose_product_invite(ctx: RunContext[ProductInviteParams]) -> Dict[str, str]:
+    """Generate casual product invitation email for GitHub issue prospects."""
+    template = generate_email_template(
+        template_type="product_invite",
+        persona_name=ctx.deps.persona_name,
+        persona_title=ctx.deps.persona_title,
+        repo=ctx.deps.repo,
+        issue_title=ctx.deps.issue_title,
+        recipient_name=ctx.deps.recipient_name,
+        message_style=ctx.deps.message_style,
+        omics_os_url=ctx.deps.omics_os_url,
+    )
+
+    await log_provenance(
+        actor="product_invite_agent",
+        action="compose_product_invite",
+        resource_type="lead",
+        resource_id=ctx.deps.lead_id,
+        details={"subject": template.get("subject", ""), "repo": ctx.deps.repo},
+    )
+    return template
+
+
+@product_invite_agent.tool(retries=2)
+async def send_product_invite_via_agentmail(ctx: RunContext[ProductInviteParams], email_content: Dict[str, str]) -> Dict[str, Optional[str]]:
+    """Send product invitation email via AgentMail using persona's from_email."""
+    client = AgentMailClient()
+    message = EmailMessage(
+        to=ctx.deps.recipient_email,
+        from_email=ctx.deps.persona_from_email,
+        subject=email_content.get("subject", ""),
+        body=email_content.get("body", ""),
+        metadata={
+            "lead_id": ctx.deps.lead_id,
+            "thread_type": "product_invite",
+            "persona": ctx.deps.persona_name,
+            "repo": ctx.deps.repo,
+        },
+    )
+
+    result = await client.send_email(message)
+
+    if result.get("success"):
+        await log_provenance(
+            actor=ctx.deps.persona_from_email,
+            action="sent_product_invite",
+            resource_type="lead",
+            resource_id=ctx.deps.lead_id,
+            details={"recipient": str(ctx.deps.recipient_email), "message_id": result.get("message_id"), "persona": ctx.deps.persona_name},
+        )
+        return {
+            "success": True,
+            "status": "sent",
+            "message_id": result.get("message_id"),  # type: ignore[return-value]
+            "thread_id": result.get("thread_id"),  # type: ignore[return-value]
+        }
+
+    # Failure path with transient retry signaling
+    status_code = result.get("status_code")
+    error = result.get("error", "")
+
+    await log_provenance(
+        actor=ctx.deps.persona_from_email,
+        action="product_invite_failed",
+        resource_type="lead",
+        resource_id=ctx.deps.lead_id,
+        details={"recipient": str(ctx.deps.recipient_email), "status_code": status_code, "error": str(error)},
+    )
+
+    try:
+        if status_code is not None:
+            sc = int(status_code)
+            if sc in (408, 429) or (500 <= sc < 600):
+                raise ModelRetry("AgentMail transient error, retrying")
+        if "rate" in str(error).lower():
+            raise ModelRetry("Rate limited, will retry")
+    except Exception:
+        # If conversion fails, ignore and return failed
+        pass
+
+    return {"success": False, "status": "failed", "message_id": None, "thread_id": None}  # type: ignore[return-value]
+
+
+async def send_product_invite_direct(params: ProductInviteParams) -> Dict[str, Optional[str]]:
+    """
+    Deterministic product invite send that bypasses the LLM agent and returns structured JSON.
+    - Composes the casual invite using product_invite_template 
+    - Sends via AgentMailClient using persona's from_email
+    - Returns a dict compatible with EmailResult fields
+    """
+    # Compose casual email
+    template = generate_email_template(
+        template_type="product_invite",
+        persona_name=params.persona_name,
+        persona_title=params.persona_title,
+        repo=params.repo,
+        issue_title=params.issue_title,
+        recipient_name=params.recipient_name,
+        message_style=params.message_style,
+        omics_os_url=params.omics_os_url,
+    )
+
+    # Send via AgentMail using persona's from_email
+    client = AgentMailClient()
+    message = EmailMessage(
+        to=params.recipient_email,
+        from_email=params.persona_from_email,
+        subject=template.get("subject", ""),
+        body=template.get("body", ""),
+        metadata={
+            "lead_id": params.lead_id,
+            "thread_type": "product_invite",
+            "persona": params.persona_name,
+            "repo": params.repo,
+        },
+    )
+
+    result = await client.send_email(message)
+
+    if result.get("success"):
+        await log_provenance(
+            actor=params.persona_from_email,
+            action="sent_product_invite",
+            resource_type="lead",
+            resource_id=params.lead_id,
+            details={"recipient": str(params.recipient_email), "message_id": result.get("message_id"), "persona": params.persona_name},
+        )
+        return {
+            "success": True,
+            "status": "sent",
+            "message_id": result.get("message_id"),
+            "thread_id": result.get("thread_id"),
+            "error_message": None,
+        }
+
+    # Failure
+    await log_provenance(
+        actor=params.persona_from_email,
+        action="product_invite_failed",
+        resource_type="lead",
+        resource_id=params.lead_id,
+        details={"recipient": str(params.recipient_email), "status_code": result.get("status_code"), "error": str(result.get("error"))},
     )
     return {
         "success": False,

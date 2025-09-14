@@ -24,9 +24,9 @@ class ResearchSummary(BaseModel):
     export_ready: bool
     confidence_score: float = Field(ge=0, le=1)
 
-model = BedrockConverseModel( "us.anthropic.claude-sonnet-4-20250514-v1:0")
+# model = BedrockConverseModel( "us.anthropic.claude-sonnet-4-20250514-v1:0")
 summarizer_agent = Agent[SummaryInput, ResearchSummary](
-    model,
+    'openai:gpt-4.1',
     deps_type=SummaryInput,
     output_type=ResearchSummary,
     instructions=(

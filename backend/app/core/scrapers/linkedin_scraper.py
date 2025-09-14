@@ -68,6 +68,7 @@ class LinkedInScraper:
                     wait_between_actions=0.6,
                     headless=self.headless,
                     keep_alive=True,  # Keep session alive for login persistence
+                    timout=600
                 )
             except Exception:
                 self.browser_profile = None
