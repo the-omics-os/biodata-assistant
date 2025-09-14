@@ -1,17 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
-from app.core.database import get_db
+from app.core.database import get_db, SessionLocal
 from app.models.schemas import SearchRequest, SearchResponse, TaskResponse
+from app.core.agent_orchestrator import AgentOrchestrator
 from app.models.database import Task
 from app.models.enums import TaskType, TaskStatus
 from datetime import datetime
 import uuid
+import logging
 
 router = APIRouter()
+orchestrator = AgentOrchestrator()
 
 @router.post("", response_model=SearchResponse)
 async def initiate_search(
     search_request: SearchRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """Initiate a new dataset search task."""
@@ -30,15 +34,54 @@ async def initiate_search(
     db.add(task)
     db.commit()
     db.refresh(task)
-    
-    # TODO: In Phase 2, this will trigger the agentic search system
-    # For now, just return the task ID
-    
+
+    # Kick off agentic workflow in background
+    background_tasks.add_task(_run_agentic_search, task_id, search_request.dict())
+
     return SearchResponse(
         task_id=task_id,
         status=TaskStatus.PENDING,
         message="Search task initiated successfully"
     )
+
+async def _run_agentic_search(task_id: str, req_data: dict) -> None:
+    """Background task to execute the multi-agent workflow and persist results."""
+    logger = logging.getLogger(__name__)
+    db = SessionLocal()
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if task:
+            task.status = TaskStatus.RUNNING.value
+            task.started_at = datetime.utcnow()
+            db.commit()
+
+        request = SearchRequest(**req_data)
+        user_email = task.user_email if task and task.user_email else ""
+        result = await orchestrator.execute_workflow(request, user_email=user_email)
+
+        # Persist results
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if task:
+            task.status = TaskStatus.COMPLETED.value
+            task.output_data = result
+            task.completed_at = datetime.utcnow()
+            db.commit()
+    except Exception as e:
+        logger.error(f"Agent workflow failed for task {task_id}: {e}")
+        try:
+            task = db.query(Task).filter(Task.id == task_id).first()
+            if task:
+                task.status = TaskStatus.FAILED.value
+                task.error_message = str(e)
+                task.completed_at = datetime.utcnow()
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 @router.get("/{task_id}", response_model=TaskResponse)
 async def get_search_status(

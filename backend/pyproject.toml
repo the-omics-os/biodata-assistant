@@ -5,5 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "browser-use>=0.7.7",
+    "celery>=5.5.3",
+    "fastapi>=0.116.1",
+    "pydantic-ai>=1.0.6",
     "pydantic[email]>=2.11.9",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+    "sqlalchemy>=2.0.43",
 ]
